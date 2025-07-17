@@ -1,9 +1,9 @@
-package kujira_cli
+package main
 
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"os"
 	"time"
@@ -55,7 +55,7 @@ func fetchData() tea.Msg {
 	}
 	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return apiMsg{err: err}
 	}
@@ -125,7 +125,7 @@ func (m model) View() string {
 
 func main() {
 	p := tea.NewProgram(initialModel())
-	if err := p.Start(); err != nil {
+	if _, err := p.Run(); err != nil {
 		fmt.Printf("Error: %v", err)
 		os.Exit(1)
 	}
