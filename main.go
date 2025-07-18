@@ -12,6 +12,38 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// Estructuras para los datos al obtenr los utlimos episodios
+type LatestEpisode struct {
+	Title   string `json:"title"`
+	Image   string `json:"img"`
+	Url     string `json:"url"`
+	Episode string `json:"episode"`
+}
+
+// Estructuras para los datos de un episodio
+type Episode struct {
+	Title   string    `json:"title"`
+	Number  string    `json:"numberEpisode"`
+	Servers []Servers `json:"servers"`
+}
+
+// Estructura para los servidores de un episodio
+type Servers struct {
+	Name   string `json:"name"`
+	Url    string `json:"url"`
+	Source string `json:"source"`
+}
+
+// Estructura para los datos de un anime de animeflv
+type Anime struct {
+	Title            string   `json:"title"`
+	TitleAlternative string   `json:"titleAlternative"`
+	Image            string   `json:"img"`
+	Status           string   `json:"status"`
+	Synopsis         string   `json:"synopsis"`
+	Genres           []string `json:"genres"`
+}
+
 // Modelo para los datos de la API (ejemplo con JSONPlaceholder)
 type Post struct {
 	ID     int    `json:"id"`
