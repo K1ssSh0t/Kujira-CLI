@@ -45,18 +45,22 @@ type Anime struct {
 }
 
 // Modelo para los datos de la API (ejemplo con JSONPlaceholder)
-type Post struct {
-	ID     int    `json:"id"`
-	Title  string `json:"title"`
-	Body   string `json:"body"`
-	UserID int    `json:"userId"`
-}
+type source int
 
-// Modelo para BubbleTea
+const (
+	none source = iota
+	animeflv
+	tioanime
+)
+
 type model struct {
-	posts  []Post
-	status string
-	err    error
+	stage         int // 0: menu, 1: episodes, 2: episode detail
+	selectedSrc   source
+	episodes      []LatestEpisode
+	selectedIndex int
+	episodeDetail *Episode
+	status        string
+	err           error
 }
 
 // Estilos con lipgloss
@@ -67,68 +71,160 @@ var (
 			Padding(0, 1).
 			Bold(true)
 
-	itemStyle  = lipgloss.NewStyle().PaddingLeft(1)
-	errorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000"))
+	itemStyle   = lipgloss.NewStyle().PaddingLeft(1)
+	errorStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000"))
+	cursorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFD700"))
 )
 
 // Comando para obtener datos de la API
-type apiMsg struct {
-	posts []Post
-	err   error
+type episodesMsg struct {
+	episodes []LatestEpisode
+	err      error
 }
 
-func fetchData() tea.Msg {
-	// Cambia esta URL por tu API real
-	url := "https://jsonplaceholder.typicode.com/posts"
+type episodeDetailMsg struct {
+	episode *Episode
+	err     error
+}
+
+func fetchEpisodes(src source) tea.Msg {
+	var url string
+	if src == animeflv {
+		url = "https://kujira.unusualoticramo.workers.dev//animeflv/latest" // Cambia por tu API real
+	} else {
+		url = "https://kujira.unusualoticramo.workers.dev//tioanime/latest" // Cambia por tu API real
+	}
 	client := http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Get(url)
 	if err != nil {
-		return apiMsg{err: err}
+		return episodesMsg{err: err}
 	}
 	defer resp.Body.Close()
-
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return apiMsg{err: err}
+		return episodesMsg{err: err}
 	}
-
-	var posts []Post
-	if err := json.Unmarshal(body, &posts); err != nil {
-		return apiMsg{err: err}
+	var episodes []LatestEpisode
+	if err := json.Unmarshal(body, &episodes); err != nil {
+		return episodesMsg{err: err}
 	}
+	return episodesMsg{episodes: episodes}
+}
 
-	return apiMsg{posts: posts}
+func fetchEpisodeDetail(src source, episodeID string) tea.Msg {
+	var url string
+	if src == animeflv {
+		url = fmt.Sprintf("https://kujira.unusualoticramo.workers.dev//animeflv/episode/%s", episodeID)
+	} else {
+		url = fmt.Sprintf("https://kujira.unusualoticramo.workers.dev//tioanime/episode/%s", episodeID)
+	}
+	client := http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return episodeDetailMsg{err: err}
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return episodeDetailMsg{err: err}
+	}
+	var ep Episode
+	if err := json.Unmarshal(body, &ep); err != nil {
+		return episodeDetailMsg{err: err}
+	}
+	return episodeDetailMsg{episode: &ep}
 }
 
 // Inicialización del modelo
 func initialModel() model {
 	return model{
-		posts:  []Post{},
-		status: "Cargando datos...",
-		err:    nil,
+		stage:         0,
+		selectedSrc:   none,
+		selectedIndex: 0,
+		status:        "Selecciona una fuente:",
 	}
 }
 
 func (m model) Init() tea.Cmd {
-	return func() tea.Msg {
-		return fetchData()
-	}
+	return nil
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "q", "ctrl+c":
-			return m, tea.Quit
+		switch m.stage {
+		case 0: // Menu
+			switch msg.String() {
+			case "down", "j":
+				if m.selectedIndex < 1 {
+					m.selectedIndex++
+				}
+			case "up", "k":
+				if m.selectedIndex > 0 {
+					m.selectedIndex--
+				}
+			case "enter":
+				if m.selectedIndex == 0 {
+					m.selectedSrc = animeflv
+				} else {
+					m.selectedSrc = tioanime
+				}
+				m.stage = 1
+				m.status = "Cargando episodios..."
+				return m, func() tea.Msg { return fetchEpisodes(m.selectedSrc) }
+			case "q", "ctrl+c":
+				return m, tea.Quit
+			}
+		case 1: // Lista de episodios
+			switch msg.String() {
+			case "down", "j":
+				if m.selectedIndex < len(m.episodes)-1 {
+					m.selectedIndex++
+				}
+			case "up", "k":
+				if m.selectedIndex > 0 {
+					m.selectedIndex--
+				}
+			case "enter":
+				ep := m.episodes[m.selectedIndex]
+				m.stage = 2
+				m.status = "Cargando episodio..."
+				return m, func() tea.Msg { return fetchEpisodeDetail(m.selectedSrc, ep.Episode) }
+			case "q", "ctrl+c":
+				return m, tea.Quit
+			case "esc", "left", "h":
+				m.stage = 0
+				m.selectedIndex = 0
+				m.episodes = nil
+				m.status = "Selecciona una fuente:"
+			}
+		case 2: // Detalle de episodio
+			switch msg.String() {
+			case "q", "ctrl+c":
+				return m, tea.Quit
+			case "esc", "left", "h":
+				m.stage = 1
+				m.episodeDetail = nil
+				m.status = "Cargando episodios..."
+				return m, func() tea.Msg { return fetchEpisodes(m.selectedSrc) }
+			}
 		}
-	case apiMsg:
+	case episodesMsg:
 		if msg.err != nil {
 			m.err = msg.err
-			m.status = "Error!"
+			m.status = "Error al cargar episodios"
 		} else {
-			m.posts = msg.posts
-			m.status = "Datos cargados!"
+			m.episodes = msg.episodes
+			m.selectedIndex = 0
+			m.status = "Selecciona un episodio:"
+		}
+	case episodeDetailMsg:
+		if msg.err != nil {
+			m.err = msg.err
+			m.status = "Error al cargar episodio"
+		} else {
+			m.episodeDetail = msg.episode
+			m.status = "Detalle del episodio:"
 		}
 	}
 	return m, nil
@@ -138,21 +234,43 @@ func (m model) View() string {
 	if m.err != nil {
 		return errorStyle.Render(fmt.Sprintf("Error: %v", m.err))
 	}
-
-	if len(m.posts) == 0 {
-		return m.status
+	switch m.stage {
+	case 0:
+		s := titleStyle.Render("Kujira CLI") + "\n\n"
+		options := []string{"AnimeFLV", "TioAnime"}
+		for i, opt := range options {
+			cursor := "  "
+			if m.selectedIndex == i {
+				cursor = cursorStyle.Render("➤ ")
+			}
+			s += fmt.Sprintf("%s%s\n", cursor, opt)
+		}
+		s += "\nUsa ↑/↓ y Enter para seleccionar. 'q' para salir."
+		return s
+	case 1:
+		s := titleStyle.Render("Últimos Episodios") + "\n\n"
+		for i, ep := range m.episodes {
+			cursor := "  "
+			if m.selectedIndex == i {
+				cursor = cursorStyle.Render("➤ ")
+			}
+			s += fmt.Sprintf("%s%s [%s]\n", cursor, ep.Title, ep.Episode)
+		}
+		s += "\nEnter para ver episodio, 'esc' para volver, 'q' para salir."
+		return s
+	case 2:
+		if m.episodeDetail == nil {
+			return m.status
+		}
+		ep := m.episodeDetail
+		s := titleStyle.Render(fmt.Sprintf("Episodio: %s (%s)", ep.Title, ep.Number)) + "\n\n"
+		for _, srv := range ep.Servers {
+			s += fmt.Sprintf("Servidor: %s\nURL: %s\nFuente: %s\n\n", srv.Name, srv.Url, srv.Source)
+		}
+		s += "\n'esc' para volver, 'q' para salir."
+		return s
 	}
-
-	s := titleStyle.Render("Posts de la API") + "\n\n"
-	for _, post := range m.posts {
-		s += fmt.Sprintf("%s%d: %s\n",
-			itemStyle.Render("•"),
-			post.ID,
-			lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Render(post.Title),
-		)
-	}
-	s += "\nPresiona 'q' para salir\n"
-	return s
+	return m.status
 }
 
 func main() {
