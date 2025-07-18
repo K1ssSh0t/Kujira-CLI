@@ -72,9 +72,11 @@ var (
 			Padding(0, 1).
 			Bold(true)
 
-	itemStyle   = lipgloss.NewStyle().PaddingLeft(1)
-	errorStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000"))
-	cursorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFD700"))
+	itemStyle           = lipgloss.NewStyle().PaddingLeft(1)
+	errorStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000"))
+	cursorStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFD700"))
+	inactiveServerStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#777777")) // Color gris para servidores inactivos
 )
 
 // Comando para obtener datos de la API
@@ -207,6 +209,34 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case 2: // Detalle de episodio
 			switch msg.String() {
+			case "down", "j":
+				// Solo avanzar si hay más servidores y el siguiente es seleccionable
+				if m.selectedIndex < len(m.episodeDetail.Servers)-1 {
+					nextIndex := m.selectedIndex + 1
+					// Buscar el siguiente servidor con Source
+					for nextIndex < len(m.episodeDetail.Servers) &&
+						(m.episodeDetail.Servers[nextIndex].Source == "" ||
+							strings.ToLower(m.episodeDetail.Servers[nextIndex].Source) == "unknown") {
+						nextIndex++
+					}
+					if nextIndex < len(m.episodeDetail.Servers) {
+						m.selectedIndex = nextIndex
+					}
+				}
+			case "up", "k":
+				// Solo retroceder si hay servidores anteriores seleccionables
+				if m.selectedIndex > 0 {
+					prevIndex := m.selectedIndex - 1
+					// Buscar el servidor anterior con Source
+					for prevIndex >= 0 &&
+						(m.episodeDetail.Servers[prevIndex].Source == "" ||
+							strings.ToLower(m.episodeDetail.Servers[prevIndex].Source) == "unknown") {
+						prevIndex--
+					}
+					if prevIndex >= 0 {
+						m.selectedIndex = prevIndex
+					}
+				}
 			case "q", "ctrl+c":
 				return m, tea.Quit
 			case "esc", "left", "h":
@@ -271,8 +301,23 @@ func (m model) View() string {
 		}
 		ep := m.episodeDetail
 		s := titleStyle.Render(fmt.Sprintf("Episodio: %s (%s)", ep.Title, ep.Number)) + "\n\n"
-		for _, srv := range ep.Servers {
-			s += fmt.Sprintf("Servidor: %s\nURL: %s\nFuente: %s\n\n", srv.Name, srv.Url, srv.Source)
+		for i, srv := range ep.Servers {
+			cursor := "  "
+			sourceValid := srv.Source != "" && strings.ToLower(srv.Source) != "unknown"
+			if m.selectedIndex == i && sourceValid {
+				cursor = cursorStyle.Render("➤ ")
+			}
+
+			serverText := fmt.Sprintf("Servidor: %s\nURL: %s", srv.Name, srv.Url)
+			if sourceValid {
+				serverText += fmt.Sprintf("\nFuente: %s", srv.Source)
+			}
+
+			// Aplica estilo diferente si no tiene Source válido
+			if !sourceValid {
+				serverText = inactiveServerStyle.Render(serverText)
+			}
+			s += fmt.Sprintf("%s%s\n\n", cursor, serverText)
 		}
 		s += "\n'esc' para volver, 'q' para salir."
 		return s
