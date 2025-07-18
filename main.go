@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -90,9 +91,9 @@ type episodeDetailMsg struct {
 func fetchEpisodes(src source) tea.Msg {
 	var url string
 	if src == animeflv {
-		url = "https://kujira.unusualoticramo.workers.dev//animeflv/latest" // Cambia por tu API real
+		url = "https://kujira.unusualoticramo.workers.dev/animeflv/latest" // Cambia por tu API real
 	} else {
-		url = "https://kujira.unusualoticramo.workers.dev//tioanime/latest" // Cambia por tu API real
+		url = "https://kujira.unusualoticramo.workers.dev/tioanime/latest" // Cambia por tu API real
 	}
 	client := http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Get(url)
@@ -114,9 +115,9 @@ func fetchEpisodes(src source) tea.Msg {
 func fetchEpisodeDetail(src source, episodeID string) tea.Msg {
 	var url string
 	if src == animeflv {
-		url = fmt.Sprintf("https://kujira.unusualoticramo.workers.dev//animeflv/episode/%s", episodeID)
+		url = fmt.Sprintf("https://kujira.unusualoticramo.workers.dev/animeflv/episode/%s", episodeID)
 	} else {
-		url = fmt.Sprintf("https://kujira.unusualoticramo.workers.dev//tioanime/episode/%s", episodeID)
+		url = fmt.Sprintf("https://kujira.unusualoticramo.workers.dev/tioanime/episode/%s", episodeID)
 	}
 	client := http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Get(url)
@@ -147,6 +148,11 @@ func initialModel() model {
 
 func (m model) Init() tea.Cmd {
 	return nil
+}
+
+func extractEpisodeID(url string) string {
+	parts := strings.Split(url, "/")
+	return parts[len(parts)-1]
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -187,9 +193,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case "enter":
 				ep := m.episodes[m.selectedIndex]
+				episodeID := extractEpisodeID(ep.Url) // Extrae solo el ID del episodio
 				m.stage = 2
 				m.status = "Cargando episodio..."
-				return m, func() tea.Msg { return fetchEpisodeDetail(m.selectedSrc, ep.Episode) }
+				return m, func() tea.Msg { return fetchEpisodeDetail(m.selectedSrc, episodeID) }
 			case "q", "ctrl+c":
 				return m, tea.Quit
 			case "esc", "left", "h":
