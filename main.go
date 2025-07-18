@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -237,6 +238,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.selectedIndex = prevIndex
 					}
 				}
+			case "enter":
+				if m.episodeDetail != nil && len(m.episodeDetail.Servers) > 0 {
+					srv := m.episodeDetail.Servers[m.selectedIndex]
+					if srv.Source != "" && strings.ToLower(srv.Source) != "unknown" {
+						// Ejecutar mpv con la URL del servidor
+						cmd := exec.Command("mpv", srv.Source)
+						err := cmd.Start()
+						if err != nil {
+							m.err = fmt.Errorf("error al ejecutar mpv: %v", err)
+						} else {
+							m.status = fmt.Sprintf("Reproduciendo con mpv: %s", srv.Name)
+						}
+					}
+				}
 			case "q", "ctrl+c":
 				return m, tea.Quit
 			case "esc", "left", "h":
@@ -319,7 +334,8 @@ func (m model) View() string {
 			}
 			s += fmt.Sprintf("%s%s\n\n", cursor, serverText)
 		}
-		s += "\n'esc' para volver, 'q' para salir."
+		s += "\n'enter' para reproducir, 'esc' para volver, 'q' para salir."
+
 		return s
 	}
 	return m.status
