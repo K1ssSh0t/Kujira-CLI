@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"kujira_cli/extractors"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -273,6 +275,38 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Mostrar mensaje de reproducción inmediatamente
 					m.status = playingStyle.Render(fmt.Sprintf("▶ Reproduciendo %s en %s...",
 						m.episodeDetail.Title, srv.Name))
+
+					if strings.EqualFold(srv.Name, "Voe") {
+						return m, func() tea.Msg {
+							var videoURL string
+							extractor := extractors.Voe
+							err := extractor.GetURL(
+								srv.Url,
+								extractor.MainURL(),
+								func(sub extractors.SubtitleFile) {},
+								func(link *extractors.ExtractorLink) {
+									// fmt.Printf("Link encontrado: %s\n", link)
+									if videoURL == "" && strings.Contains(link.Name, "MP4") { // Tomar la primera URL que se encuentre
+										// fmt.Printf("Video URL: %s\n", link.URL)
+										videoURL = link.URL
+									}
+								},
+							)
+							if err != nil {
+								return errorMsg{err: fmt.Errorf("error con el extractor Voe: %v", err)}
+							}
+							if videoURL == "" {
+								return errorMsg{err: fmt.Errorf("no se pudo extraer el link de Voe")}
+							}
+
+							cmd := exec.Command("mpv", videoURL)
+							err = cmd.Run()
+							if err != nil {
+								return errorMsg{err: fmt.Errorf("error al ejecutar mpv: %v", err)}
+							}
+							return finishedMsg{}
+						}
+					}
 
 					if srv.Source != "" && strings.ToLower(srv.Source) != "unknown" {
 						// Devolver el comando para ejecutar mpv
