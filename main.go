@@ -264,10 +264,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.status = playingStyle.Render(fmt.Sprintf("▶ Reproduciendo %s en %s",
 								m.episodeDetail.Title, srv.Name))
 
-							go func(p *tea.Program) {
+							// Usamos una copia local de program para evitar problemas de concurrencia
+							program := m.program
+							go func() {
 								cmd.Wait()
-								p.Send("playback_finished") // Usamos la referencia del programa
-							}(m.program)
+								if program != nil {
+									program.Send("playback_finished")
+								}
+							}()
 						}
 					}
 				}
@@ -377,7 +381,7 @@ func (m model) View() string {
 func main() {
 	m := initialModel()
 	p := tea.NewProgram(m)
-	m.program = p // Asigna el programa al modelo
+	m.program = p // Asigna el programa al modelo antes de ejecutarlo
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Error: %v", err)
 		os.Exit(1)
