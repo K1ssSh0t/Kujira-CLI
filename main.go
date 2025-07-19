@@ -78,6 +78,9 @@ var (
 	cursorStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFD700"))
 	inactiveServerStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#777777")) // Color gris para servidores inactivos
+	playingStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#00FF00")).
+			Bold(true)
 )
 
 // Comando para obtener datos de la API
@@ -159,6 +162,7 @@ func extractEpisodeID(url string) string {
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	program := tea.NewProgram(m)
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch m.stage {
@@ -242,13 +246,31 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.episodeDetail != nil && len(m.episodeDetail.Servers) > 0 {
 					srv := m.episodeDetail.Servers[m.selectedIndex]
 					if srv.Source != "" && strings.ToLower(srv.Source) != "unknown" {
-						// Ejecutar mpv con la URL del servidor
-						cmd := exec.Command("mpv", srv.Source)
+						var cmd *exec.Cmd
+
+						// Manejo especial para YourUpload
+						if strings.Contains(strings.ToLower(srv.Url), "yourupload") {
+							referer := fmt.Sprintf("Referer: %s", srv.Url)
+							cmd = exec.Command("mpv",
+								"--http-header-fields="+referer,
+								srv.Source)
+						} else {
+							cmd = exec.Command("mpv", srv.Source)
+						}
+
 						err := cmd.Start()
 						if err != nil {
 							m.err = fmt.Errorf("error al ejecutar mpv: %v", err)
+							m.status = errorStyle.Render(fmt.Sprintf("Error: %v", err))
 						} else {
-							m.status = fmt.Sprintf("Reproduciendo con mpv: %s", srv.Name)
+							m.status = playingStyle.Render(fmt.Sprintf("▶ Reproduciendo %s en %s",
+								m.episodeDetail.Title, srv.Name))
+
+							go func() {
+								cmd.Wait()
+								program.Send(tea.Msg("playback_finished"))
+							}()
+
 						}
 					}
 				}
@@ -277,6 +299,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.episodeDetail = msg.episode
 			m.status = "Detalle del episodio:"
+		}
+	case string:
+		if msg == "playback_finished" {
+			m.status = "Reproducción finalizada"
 		}
 	}
 	return m, nil
@@ -332,6 +358,16 @@ func (m model) View() string {
 			if !sourceValid {
 				serverText = inactiveServerStyle.Render(serverText)
 			}
+			statusLine := "\n"
+			if strings.HasPrefix(m.status, "▶") {
+				statusLine = playingStyle.Render("\n"+m.status) + "\n\n"
+			} else if strings.HasPrefix(m.status, "Error:") {
+				statusLine = errorStyle.Render("\n"+m.status) + "\n\n"
+			} else {
+				statusLine = "\n" + m.status + "\n\n"
+			}
+
+			s += statusLine
 			s += fmt.Sprintf("%s%s\n\n", cursor, serverText)
 		}
 		s += "\n'enter' para reproducir, 'esc' para volver, 'q' para salir."
