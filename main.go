@@ -224,32 +224,48 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case 2: // Detalle de episodio
 			switch msg.String() {
 			case "down", "j":
-				// Solo avanzar si hay más servidores y el siguiente es seleccionable
-				if m.selectedIndex < len(m.episodeDetail.Servers)-1 {
-					nextIndex := m.selectedIndex + 1
-					// Buscar el siguiente servidor con Source
-					for nextIndex < len(m.episodeDetail.Servers) &&
-						(m.episodeDetail.Servers[nextIndex].Source == "" ||
-							strings.ToLower(m.episodeDetail.Servers[nextIndex].Source) == "unknown") {
-						nextIndex++
-					}
-					if nextIndex < len(m.episodeDetail.Servers) {
-						m.selectedIndex = nextIndex
+
+				if len(m.episodeDetail.Servers) == 0 {
+					return m, nil
+				}
+				originalIndex := m.selectedIndex
+				validFound := false
+
+				// Buscar el siguiente servidor válido
+				for i := originalIndex + 1; i < len(m.episodeDetail.Servers); i++ {
+					if m.episodeDetail.Servers[i].Source != "" &&
+						strings.ToLower(m.episodeDetail.Servers[i].Source) != "unknown" {
+						m.selectedIndex = i
+						validFound = true
+						break
 					}
 				}
+
+				// Si no se encontró ninguno válido, mantener posición
+				if !validFound {
+					m.selectedIndex = originalIndex
+				}
+
 			case "up", "k":
-				// Solo retroceder si hay servidores anteriores seleccionables
-				if m.selectedIndex > 0 {
-					prevIndex := m.selectedIndex - 1
-					// Buscar el servidor anterior con Source
-					for prevIndex >= 0 &&
-						(m.episodeDetail.Servers[prevIndex].Source == "" ||
-							strings.ToLower(m.episodeDetail.Servers[prevIndex].Source) == "unknown") {
-						prevIndex--
+				if len(m.episodeDetail.Servers) == 0 {
+					return m, nil
+				}
+				originalIndex := m.selectedIndex
+				validFound := false
+
+				// Buscar el servidor válido anterior
+				for i := originalIndex - 1; i >= 0; i-- {
+					if m.episodeDetail.Servers[i].Source != "" &&
+						strings.ToLower(m.episodeDetail.Servers[i].Source) != "unknown" {
+						m.selectedIndex = i
+						validFound = true
+						break
 					}
-					if prevIndex >= 0 {
-						m.selectedIndex = prevIndex
-					}
+				}
+
+				// Si no se encontró ninguno válido, mantener posición
+				if !validFound {
+					m.selectedIndex = originalIndex
 				}
 			case "enter":
 				if m.episodeDetail != nil && len(m.episodeDetail.Servers) > 0 {
@@ -352,6 +368,8 @@ func (m model) View() string {
 			sourceValid := srv.Source != "" && strings.ToLower(srv.Source) != "unknown"
 			if m.selectedIndex == i && sourceValid {
 				cursor = cursorStyle.Render("➤ ")
+			} else if m.selectedIndex == i {
+				cursor = inactiveServerStyle.Render("✗ ")
 			}
 
 			serverText := fmt.Sprintf("Servidor: %s\nURL: %s", srv.Name, srv.Url)
