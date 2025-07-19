@@ -358,18 +358,18 @@ func (m model) View() string {
 			if !sourceValid {
 				serverText = inactiveServerStyle.Render(serverText)
 			}
-			statusLine := "\n"
-			if strings.HasPrefix(m.status, "▶") {
-				statusLine = playingStyle.Render("\n"+m.status) + "\n\n"
-			} else if strings.HasPrefix(m.status, "Error:") {
-				statusLine = errorStyle.Render("\n"+m.status) + "\n\n"
-			} else {
-				statusLine = "\n" + m.status + "\n\n"
-			}
 
-			s += statusLine
 			s += fmt.Sprintf("%s%s\n\n", cursor, serverText)
 		}
+		// Mostrar estado de reproducción (una sola vez al final)
+		if strings.HasPrefix(m.status, "▶") {
+			s += playingStyle.Render(m.status) + "\n\n"
+		} else if strings.HasPrefix(m.status, "Error:") {
+			s += errorStyle.Render(m.status) + "\n\n"
+		} else {
+			s += m.status + "\n\n"
+		}
+
 		s += "\n'enter' para reproducir, 'esc' para volver, 'q' para salir."
 
 		return s
