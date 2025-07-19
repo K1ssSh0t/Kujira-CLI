@@ -317,6 +317,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "Error al cargar episodio"
 		} else {
 			m.episodeDetail = msg.episode
+			m.selectedIndex = 0 // Reiniciar el índice para la nueva lista de servidores
+
+			// Opcional: buscar el primer servidor válido y seleccionarlo
+			if m.episodeDetail != nil {
+				for i, srv := range m.episodeDetail.Servers {
+					if srv.Source != "" && strings.ToLower(srv.Source) != "unknown" {
+						m.selectedIndex = i
+						break
+					}
+				}
+			}
 			m.status = "Detalle del episodio:"
 		}
 	case errorMsg:
