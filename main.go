@@ -63,6 +63,7 @@ type model struct {
 	episodeDetail *Episode
 	status        string
 	err           error
+	program       *tea.Program // Añade este campo
 }
 
 // Estilos con lipgloss
@@ -149,6 +150,7 @@ func initialModel() model {
 		selectedSrc:   none,
 		selectedIndex: 0,
 		status:        "Selecciona una fuente:",
+		program:       nil,
 	}
 }
 
@@ -162,7 +164,6 @@ func extractEpisodeID(url string) string {
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	program := tea.NewProgram(m)
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch m.stage {
@@ -248,12 +249,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if srv.Source != "" && strings.ToLower(srv.Source) != "unknown" {
 						var cmd *exec.Cmd
 
-						// Manejo especial para YourUpload
 						if strings.Contains(strings.ToLower(srv.Url), "yourupload") {
 							referer := fmt.Sprintf("Referer: %s", srv.Url)
-							cmd = exec.Command("mpv",
-								"--http-header-fields="+referer,
-								srv.Source)
+							cmd = exec.Command("mpv", "--http-header-fields="+referer, srv.Source)
 						} else {
 							cmd = exec.Command("mpv", srv.Source)
 						}
@@ -266,11 +264,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.status = playingStyle.Render(fmt.Sprintf("▶ Reproduciendo %s en %s",
 								m.episodeDetail.Title, srv.Name))
 
-							go func() {
+							go func(p *tea.Program) {
 								cmd.Wait()
-								program.Send(tea.Msg("playback_finished"))
-							}()
-
+								p.Send("playback_finished") // Usamos la referencia del programa
+							}(m.program)
 						}
 					}
 				}
@@ -378,7 +375,9 @@ func (m model) View() string {
 }
 
 func main() {
-	p := tea.NewProgram(initialModel())
+	m := initialModel()
+	p := tea.NewProgram(m)
+	m.program = p // Asigna el programa al modelo
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Error: %v", err)
 		os.Exit(1)
