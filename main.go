@@ -97,6 +97,13 @@ type episodeDetailMsg struct {
 	err     error
 }
 
+// Añade estas nuevas estructuras de mensaje al inicio del archivo
+type errorMsg struct {
+	err error
+}
+
+type finishedMsg struct{}
+
 func fetchEpisodes(src source) tea.Msg {
 	var url string
 	if src == animeflv {
@@ -246,29 +253,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case "enter":
 				if m.episodeDetail != nil && len(m.episodeDetail.Servers) > 0 {
-
 					srv := m.episodeDetail.Servers[m.selectedIndex]
-					// Mostrar mensaje de reproducción
+					// Mostrar mensaje de reproducción inmediatamente
 					m.status = playingStyle.Render(fmt.Sprintf("▶ Reproduciendo %s en %s...",
 						m.episodeDetail.Title, srv.Name))
+
 					if srv.Source != "" && strings.ToLower(srv.Source) != "unknown" {
+						// Devolver el comando para ejecutar mpv
+						return m, func() tea.Msg {
+							var cmd *exec.Cmd
+							if strings.Contains(strings.ToLower(srv.Url), "yourupload") {
+								referer := fmt.Sprintf("Referer: %s", srv.Url)
+								cmd = exec.Command("mpv", "--http-header-fields="+referer, srv.Source)
+							} else {
+								cmd = exec.Command("mpv", srv.Source)
+							}
 
-						var cmd *exec.Cmd
-
-						if strings.Contains(strings.ToLower(srv.Url), "yourupload") {
-							referer := fmt.Sprintf("Referer: %s", srv.Url)
-							cmd = exec.Command("mpv", "--http-header-fields="+referer, srv.Source)
-						} else {
-							cmd = exec.Command("mpv", srv.Source)
-						}
-
-						// Ejecutar de forma bloqueante
-						err := cmd.Run()
-						if err != nil {
-							m.err = fmt.Errorf("error al ejecutar mpv: %v", err)
-							m.status = errorStyle.Render(fmt.Sprintf("Error: %v", err))
-						} else {
-							m.status = finishedStyle.Render("✓ Reproducción finalizada")
+							err := cmd.Run()
+							if err != nil {
+								return errorMsg{err: fmt.Errorf("error al ejecutar mpv: %v", err)}
+							}
+							return finishedMsg{}
 						}
 					}
 				}
@@ -298,8 +303,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.episodeDetail = msg.episode
 			m.status = "Detalle del episodio:"
 		}
-
+	case errorMsg:
+		m.err = msg.err
+		m.status = errorStyle.Render(fmt.Sprintf("Error: %v", msg.err))
+	case finishedMsg:
+		m.status = finishedStyle.Render("✓ Reproducción finalizada")
 	}
+
 	return m, nil
 }
 
