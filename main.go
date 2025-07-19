@@ -63,7 +63,6 @@ type model struct {
 	episodeDetail *Episode
 	status        string
 	err           error
-	program       *tea.Program // Añade este campo
 }
 
 // Estilos con lipgloss
@@ -81,6 +80,9 @@ var (
 				Foreground(lipgloss.Color("#777777")) // Color gris para servidores inactivos
 	playingStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#00FF00")).
+			Bold(true)
+	finishedStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#00AAFF")). // Azul claro
 			Bold(true)
 )
 
@@ -150,7 +152,6 @@ func initialModel() model {
 		selectedSrc:   none,
 		selectedIndex: 0,
 		status:        "Selecciona una fuente:",
-		program:       nil,
 	}
 }
 
@@ -245,8 +246,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case "enter":
 				if m.episodeDetail != nil && len(m.episodeDetail.Servers) > 0 {
+
 					srv := m.episodeDetail.Servers[m.selectedIndex]
+					// Mostrar mensaje de reproducción
+					m.status = playingStyle.Render(fmt.Sprintf("▶ Reproduciendo %s en %s...",
+						m.episodeDetail.Title, srv.Name))
 					if srv.Source != "" && strings.ToLower(srv.Source) != "unknown" {
+
 						var cmd *exec.Cmd
 
 						if strings.Contains(strings.ToLower(srv.Url), "yourupload") {
@@ -256,22 +262,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							cmd = exec.Command("mpv", srv.Source)
 						}
 
-						err := cmd.Start()
+						// Ejecutar de forma bloqueante
+						err := cmd.Run()
 						if err != nil {
 							m.err = fmt.Errorf("error al ejecutar mpv: %v", err)
 							m.status = errorStyle.Render(fmt.Sprintf("Error: %v", err))
 						} else {
-							m.status = playingStyle.Render(fmt.Sprintf("▶ Reproduciendo %s en %s",
-								m.episodeDetail.Title, srv.Name))
-
-							// Usamos una copia local de program para evitar problemas de concurrencia
-							program := m.program
-							go func() {
-								cmd.Wait()
-								if program != nil {
-									program.Send("playback_finished")
-								}
-							}()
+							m.status = finishedStyle.Render("✓ Reproducción finalizada")
 						}
 					}
 				}
@@ -301,10 +298,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.episodeDetail = msg.episode
 			m.status = "Detalle del episodio:"
 		}
-	case string:
-		if msg == "playback_finished" {
-			m.status = "Reproducción finalizada"
-		}
+
 	}
 	return m, nil
 }
@@ -362,13 +356,17 @@ func (m model) View() string {
 
 			s += fmt.Sprintf("%s%s\n\n", cursor, serverText)
 		}
-		// Mostrar estado de reproducción (una sola vez al final)
-		if strings.HasPrefix(m.status, "▶") {
-			s += playingStyle.Render(m.status) + "\n\n"
-		} else if strings.HasPrefix(m.status, "Error:") {
-			s += errorStyle.Render(m.status) + "\n\n"
-		} else {
-			s += m.status + "\n\n"
+		// Mostrar estado de reproducción (si existe)
+		if m.status != "" {
+			if strings.Contains(m.status, "▶") {
+				s += playingStyle.Render(m.status) + "\n\n"
+			} else if strings.Contains(m.status, "✓") {
+				s += finishedStyle.Render(m.status) + "\n\n"
+			} else if strings.Contains(m.status, "Error:") {
+				s += errorStyle.Render(m.status) + "\n\n"
+			} else {
+				s += m.status + "\n\n"
+			}
 		}
 
 		s += "\n'enter' para reproducir, 'esc' para volver, 'q' para salir."
@@ -379,9 +377,7 @@ func (m model) View() string {
 }
 
 func main() {
-	m := initialModel()
-	p := tea.NewProgram(m)
-	m.program = p // Asigna el programa al modelo antes de ejecutarlo
+	p := tea.NewProgram(initialModel())
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Error: %v", err)
 		os.Exit(1)
