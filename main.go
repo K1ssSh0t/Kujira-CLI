@@ -65,14 +65,15 @@ const (
 )
 
 type model struct {
-	stage         int // 0: menu, 1: episodes, 2: episode detail, 3: anime info
-	selectedSrc   source
-	episodes      []LatestEpisode
-	selectedIndex int
-	episodeDetail *Episode
-	anime         *Anime
-	status        string
-	err           error
+	stage          int // 0: menu, 1: episodes, 2: episode detail, 3: anime info
+	selectedSrc    source
+	episodes       []LatestEpisode
+	selectedEpisode *LatestEpisode
+	selectedIndex  int
+	episodeDetail  *Episode
+	anime          *Anime
+	status         string
+	err            error
 }
 
 // Estilos con lipgloss
@@ -256,6 +257,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case "enter":
 				ep := m.episodes[m.selectedIndex]
+				m.selectedEpisode = &ep
 				episodeID := extractEpisodeID(ep.Url) // Extrae solo el ID del episodio
 				m.stage = 2
 				m.status = "Cargando episodio..."
@@ -373,9 +375,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			case "i": // Nueva opción para ver la info del anime
-				if m.episodeDetail != nil {
-					ep := m.episodes[m.selectedIndex] // Necesitas la URL del episodio
-					animeID := extractAnimeID(extractEpisodeID(ep.Url))
+				if m.selectedEpisode != nil {
+					animeID := extractAnimeID(extractEpisodeID(m.selectedEpisode.Url))
 					m.stage = 3
 					m.status = "Cargando información del anime..."
 					return m, func() tea.Msg { return fetchAnime(m.selectedSrc, animeID) }
@@ -390,6 +391,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case 3: // Info del anime
 			switch msg.String() {
+			case "down", "j":
+				if m.anime != nil && m.selectedIndex < len(m.anime.Episodes)-1 {
+					m.selectedIndex++
+				}
+			case "up", "k":
+				if m.selectedIndex > 0 {
+					m.selectedIndex--
+				}
+			case "enter":
+				if m.anime != nil && len(m.anime.Episodes) > 0 {
+					ep := m.anime.Episodes[m.selectedIndex]
+					episodeID := extractEpisodeID(ep.Url)
+					m.stage = 2
+					m.status = "Cargando episodio..."
+					return m, func() tea.Msg { return fetchEpisodeDetail(m.selectedSrc, episodeID) }
+				}
 			case "esc", "left", "h":
 				m.stage = 2
 				m.anime = nil
@@ -523,9 +540,17 @@ func (m model) View() string {
 		s := titleStyle.Render(fmt.Sprintf("Anime: %s", anime.Title)) + "\n\n"
 		s += fmt.Sprintf("Título alternativo: %s\n", anime.TitleAlternative)
 		s += fmt.Sprintf("Estado: %s\n", anime.Status)
-		s += fmt.Sprintf("Sinopsis: %s\n", anime.Synopsis)
-		s += fmt.Sprintf("Géneros: %s\n", strings.Join(anime.Genres, ", "))
-		s += "\n'esc' para volver, 'q' para salir."
+		s += fmt.Sprintf("Sinopsis: %s\n\n", anime.Synopsis)
+		s += fmt.Sprintf("Géneros: %s\n\n", strings.Join(anime.Genres, ", "))
+		s += titleStyle.Render("Episodios") + "\n\n"
+		for i, ep := range anime.Episodes {
+			cursor := "  "
+			if m.selectedIndex == i {
+				cursor = cursorStyle.Render("➤ ")
+			}
+			s += fmt.Sprintf("%s%s\n", cursor, ep.Name)
+		}
+		s += "\n'enter' para ver episodio, 'esc' para volver, 'q' para salir."
 		return s
 	}
 	return m.status
