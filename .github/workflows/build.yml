@@ -1,0 +1,45 @@
+
+name: Go Build
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.24.x'
+
+    - name: Build
+      run: go build -v -o kujira-cli_linux ./...
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: kujira-cli-linux
+        path: kujira-cli_linux
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.24.x'
+
+    - name: Build
+      run: go build -v -o kujira-cli_windows.exe ./...
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: kujira-cli-windows
+        path: kujira-cli_windows.exe
