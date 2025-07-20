@@ -8,21 +8,19 @@ jobs:
   build-linux:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4  # Actualizado a versión estable más reciente
+    - uses: actions/checkout@v4
     
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
         go-version: '1.24.x'
-        cache: true  # Habilita caching de dependencias
+        cache: true
         
-    - name: Install dependencies
-      run: go mod download
-    
     - name: Build
-      run: go build -v -o kujira-cli_linux ./...
+      # SOLUCIÓN: Compila solo el paquete main, no todos los paquetes
+      run: go build -v -o kujira-cli_linux .
     
-    - name: Fix Linux permissions  # Permisos de ejecución
+    - name: Fix Linux permissions
       run: chmod +x kujira-cli_linux
       
     - name: Upload Artifact
@@ -41,12 +39,10 @@ jobs:
       with:
         go-version: '1.24.x'
         cache: true
-        
-    - name: Install dependencies
-      run: go mod download
       
     - name: Build
-      run: go build -v -o kujira-cli_windows.exe ./...
+      # Misma solución para Windows
+      run: go build -v -o kujira-cli_windows.exe .
     
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
