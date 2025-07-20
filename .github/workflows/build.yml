@@ -1,4 +1,3 @@
-
 name: Go Build
 
 on:
@@ -9,18 +8,25 @@ jobs:
   build-linux:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-
+    - uses: actions/checkout@v4  # Actualizado a versión estable más reciente
+    
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
         go-version: '1.24.x'
-
+        cache: true  # Habilita caching de dependencias
+        
+    - name: Install dependencies
+      run: go mod download
+    
     - name: Build
       run: go build -v -o kujira-cli_linux ./...
-
+    
+    - name: Fix Linux permissions  # Permisos de ejecución
+      run: chmod +x kujira-cli_linux
+      
     - name: Upload Artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: kujira-cli-linux
         path: kujira-cli_linux
@@ -28,16 +34,20 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v3
-
+    - uses: actions/checkout@v4
+    
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
         go-version: '1.24.x'
-
+        cache: true
+        
+    - name: Install dependencies
+      run: go mod download
+      
     - name: Build
       run: go build -v -o kujira-cli_windows.exe ./...
-
+    
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
