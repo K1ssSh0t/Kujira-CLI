@@ -40,12 +40,19 @@ type Servers struct {
 
 // Estructura para los datos de un anime de animeflv
 type Anime struct {
-	Title            string   `json:"title"`
-	TitleAlternative string   `json:"titleAlternative"`
-	Image            string   `json:"img"`
-	Status           string   `json:"status"`
-	Synopsis         string   `json:"synopsis"`
-	Genres           []string `json:"genres"`
+	Title            string     `json:"title"`
+	TitleAlternative string     `json:"title_alt"`
+	Image            string     `json:"img"`
+	Status           string     `json:"status"`
+	Synopsis         string     `json:"synopsis"`
+	Genres           []string   `json:"genres"`
+	Episodes         []Episodes `json:"episodes"`
+}
+
+type Episodes struct {
+	Name   string `json:"name"`
+	Url    string `json:"url"`
+	Number string `json:"number"`
 }
 
 // Modelo para los datos de la API (ejemplo con JSONPlaceholder)
@@ -58,11 +65,12 @@ const (
 )
 
 type model struct {
-	stage         int // 0: menu, 1: episodes, 2: episode detail
+	stage         int // 0: menu, 1: episodes, 2: episode detail, 3: anime info
 	selectedSrc   source
 	episodes      []LatestEpisode
 	selectedIndex int
 	episodeDetail *Episode
+	anime         *Anime
 	status        string
 	err           error
 }
@@ -97,6 +105,11 @@ type episodesMsg struct {
 type episodeDetailMsg struct {
 	episode *Episode
 	err     error
+}
+
+type animeMsg struct {
+	anime *Anime
+	err   error
 }
 
 // Añade estas nuevas estructuras de mensaje al inicio del archivo
@@ -154,6 +167,30 @@ func fetchEpisodeDetail(src source, episodeID string) tea.Msg {
 	return episodeDetailMsg{episode: &ep}
 }
 
+func fetchAnime(src source, animeID string) tea.Msg {
+	var url string
+	if src == animeflv {
+		url = fmt.Sprintf("https://kujira.unusualoticramo.workers.dev/animeflv/anime/%s", animeID)
+	} else {
+		url = fmt.Sprintf("https://kujira.unusualoticramo.workers.dev/tioanime/anime/%s", animeID)
+	}
+	client := http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return animeMsg{err: err}
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return animeMsg{err: err}
+	}
+	var anime Anime
+	if err := json.Unmarshal(body, &anime); err != nil {
+		return animeMsg{err: err}
+	}
+	return animeMsg{anime: &anime}
+}
+
 // Inicialización del modelo
 func initialModel() model {
 	return model{
@@ -171,6 +208,14 @@ func (m model) Init() tea.Cmd {
 func extractEpisodeID(url string) string {
 	parts := strings.Split(url, "/")
 	return parts[len(parts)-1]
+}
+
+func extractAnimeID(episodeURL string) string {
+	parts := strings.Split(episodeURL, "-")
+	if len(parts) > 1 {
+		return strings.Join(parts[:len(parts)-1], "-")
+	}
+	return episodeURL // Devuelve la URL original si no hay guiones
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -327,6 +372,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 					}
 				}
+			case "i": // Nueva opción para ver la info del anime
+				if m.episodeDetail != nil {
+					ep := m.episodes[m.selectedIndex] // Necesitas la URL del episodio
+					animeID := extractAnimeID(extractEpisodeID(ep.Url))
+					m.stage = 3
+					m.status = "Cargando información del anime..."
+					return m, func() tea.Msg { return fetchAnime(m.selectedSrc, animeID) }
+				}
 			case "q", "ctrl+c":
 				return m, tea.Quit
 			case "esc", "left", "h":
@@ -334,6 +387,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.episodeDetail = nil
 				m.status = "Cargando episodios..."
 				return m, func() tea.Msg { return fetchEpisodes(m.selectedSrc) }
+			}
+		case 3: // Info del anime
+			switch msg.String() {
+			case "esc", "left", "h":
+				m.stage = 2
+				m.anime = nil
+				m.status = "Detalle del episodio:"
+			case "q", "ctrl+c":
+				return m, tea.Quit
 			}
 		}
 	case episodesMsg:
@@ -363,6 +425,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.status = "Detalle del episodio:"
+		}
+	case animeMsg:
+		if msg.err != nil {
+			m.err = msg.err
+			m.status = "Error al cargar la información del anime"
+		} else {
+			m.anime = msg.anime
+			m.status = "Información del anime:"
 		}
 	case errorMsg:
 		m.err = msg.err
@@ -442,8 +512,20 @@ func (m model) View() string {
 			}
 		}
 
-		s += "\n'enter' para reproducir, 'esc' para volver, 'q' para salir."
+		s += "\n'enter' para reproducir, 'i' para ver info del anime, 'esc' para volver, 'q' para salir."
 
+		return s
+	case 3:
+		if m.anime == nil {
+			return m.status
+		}
+		anime := m.anime
+		s := titleStyle.Render(fmt.Sprintf("Anime: %s", anime.Title)) + "\n\n"
+		s += fmt.Sprintf("Título alternativo: %s\n", anime.TitleAlternative)
+		s += fmt.Sprintf("Estado: %s\n", anime.Status)
+		s += fmt.Sprintf("Sinopsis: %s\n", anime.Synopsis)
+		s += fmt.Sprintf("Géneros: %s\n", strings.Join(anime.Genres, ", "))
+		s += "\n'esc' para volver, 'q' para salir."
 		return s
 	}
 	return m.status
