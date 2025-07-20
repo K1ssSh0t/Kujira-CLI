@@ -43,10 +43,36 @@ type Anime struct {
 	Title            string     `json:"title"`
 	TitleAlternative string     `json:"title_alt"`
 	Image            string     `json:"img"`
-	Status           string     `json:"status"`
+	Status           interface{} `json:"status"`
 	Synopsis         string     `json:"synopsis"`
 	Genres           []string   `json:"genres"`
 	Episodes         []Episodes `json:"episodes"`
+}
+
+func (a *Anime) UnmarshalJSON(data []byte) error {
+	type Alias Anime
+	aux := &struct {
+		Status interface{} `json:"status"`
+		*Alias
+	}{
+		Alias: (*Alias)(a),
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	switch v := aux.Status.(type) {
+	case string:
+		a.Status = v
+	case bool:
+		if v {
+			a.Status = "En emisión"
+		} else {
+			a.Status = "Finalizado"
+		}
+	default:
+		a.Status = "Desconocido"
+	}
+	return nil
 }
 
 type Episodes struct {
