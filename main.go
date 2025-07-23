@@ -40,13 +40,13 @@ type Servers struct {
 
 // Estructura para los datos de un anime de animeflv
 type Anime struct {
-	Title            string     `json:"title"`
-	TitleAlternative string     `json:"title_alt"`
-	Image            string     `json:"img"`
+	Title            string      `json:"title"`
+	TitleAlternative string      `json:"title_alt"`
+	Image            string      `json:"img"`
 	Status           interface{} `json:"status"`
-	Synopsis         string     `json:"synopsis"`
-	Genres           []string   `json:"genres"`
-	Episodes         []Episodes `json:"episodes"`
+	Synopsis         string      `json:"synopsis"`
+	Genres           []string    `json:"genres"`
+	Episodes         []Episodes  `json:"episodes"`
 }
 
 func (a *Anime) UnmarshalJSON(data []byte) error {
@@ -91,15 +91,15 @@ const (
 )
 
 type model struct {
-	stage          int // 0: menu, 1: episodes, 2: episode detail, 3: anime info
-	selectedSrc    source
-	episodes       []LatestEpisode
+	stage           int // 0: menu, 1: episodes, 2: episode detail, 3: anime info
+	selectedSrc     source
+	episodes        []LatestEpisode
 	selectedEpisode *LatestEpisode
-	selectedIndex  int
-	episodeDetail  *Episode
-	anime          *Anime
-	status         string
-	err            error
+	selectedIndex   int
+	episodeDetail   *Episode
+	anime           *Anime
+	status          string
+	err             error
 }
 
 // Estilos con lipgloss
@@ -372,6 +372,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 								return errorMsg{err: fmt.Errorf("no se pudo extraer el link de Voe")}
 							}
 
+							cmd := exec.Command("mpv", videoURL)
+							err = cmd.Run()
+							if err != nil {
+								return errorMsg{err: fmt.Errorf("error al ejecutar mpv: %v", err)}
+							}
+							return finishedMsg{}
+						}
+					}
+
+					if strings.EqualFold(srv.Name, "Stape") {
+						// fmt.Print("Reproduciendo desde StreamTape Localmente...\n")
+						return m, func() tea.Msg {
+							videoURL, err := extractors.ExtractStreamTapeUrl(srv.Url)
+							if err != nil {
+								return errorMsg{err: fmt.Errorf("error al extraer URL de StreamTape: %v", err)}
+							}
 							cmd := exec.Command("mpv", videoURL)
 							err = cmd.Run()
 							if err != nil {
