@@ -146,6 +146,15 @@ type errorMsg struct {
 
 type finishedMsg struct{}
 
+func stringInSlice(str string, slice []string) bool {
+	for _, s := range slice {
+		if s == str {
+			return true
+		}
+	}
+	return false
+}
+
 func fetchEpisodes(src source) tea.Msg {
 	var url string
 	if src == animeflv {
@@ -308,8 +317,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				// Buscar el siguiente servidor válido
 				for i := originalIndex + 1; i < len(m.episodeDetail.Servers); i++ {
-					if m.episodeDetail.Servers[i].Source != "" &&
-						strings.ToLower(m.episodeDetail.Servers[i].Source) != "unknown" {
+					// if m.episodeDetail.Servers[i].Source != "" &&
+					// 	strings.ToLower(m.episodeDetail.Servers[i].Source) != "unknown" {
+					if stringInSlice(m.episodeDetail.Servers[i].Name, []string{"Voe", "Stape", "YourUpload", "StreamTape", "Streamtape", "StreamTape Localmente"}) {
 						m.selectedIndex = i
 						validFound = true
 						break
@@ -330,8 +340,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				// Buscar el servidor válido anterior
 				for i := originalIndex - 1; i >= 0; i-- {
-					if m.episodeDetail.Servers[i].Source != "" &&
-						strings.ToLower(m.episodeDetail.Servers[i].Source) != "unknown" {
+					// if m.episodeDetail.Servers[i].Source != "" &&
+					// 	strings.ToLower(m.episodeDetail.Servers[i].Source) != "unknown" {
+					if stringInSlice(m.episodeDetail.Servers[i].Name, []string{"Voe", "Stape", "YourUpload", "StreamTape", "Streamtape", "StreamTape Localmente"}) {
 						m.selectedIndex = i
 						validFound = true
 						break
@@ -477,7 +488,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Opcional: buscar el primer servidor válido y seleccionarlo
 			if m.episodeDetail != nil {
 				for i, srv := range m.episodeDetail.Servers {
-					if srv.Source != "" && strings.ToLower(srv.Source) != "unknown" {
+					// if srv.Source != "" && strings.ToLower(srv.Source) != "unknown" {
+					if stringInSlice(srv.Name, []string{"Voe", "Stape", "YourUpload", "StreamTape", "Streamtape", "StreamTape Localmente"}) {
 						m.selectedIndex = i
 						break
 					}
@@ -539,7 +551,8 @@ func (m model) View() string {
 		s := titleStyle.Render(fmt.Sprintf("Episodio: %s (%s)", ep.Title, ep.Number)) + "\n\n"
 		for i, srv := range ep.Servers {
 			cursor := "  "
-			sourceValid := srv.Source != "" && strings.ToLower(srv.Source) != "unknown"
+			// sourceValid := srv.Source != "" && strings.ToLower(srv.Source) != "unknown"
+			sourceValid := stringInSlice(srv.Name, []string{"Voe", "Stape", "YourUpload", "StreamTape", "Streamtape", "StreamTape Localmente"})
 			if m.selectedIndex == i && sourceValid {
 				cursor = cursorStyle.Render("➤ ")
 			} else if m.selectedIndex == i {
