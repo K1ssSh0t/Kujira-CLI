@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Text, Box, Newline, useInput, Spacer } from 'ink';
+import { Text, Box, Newline } from 'ink';
 import SelectInput from 'ink-select-input';
+import axios from 'axios';
 
 type AnimeItem = {
 	title: string;
@@ -27,14 +28,24 @@ export default function App({ provider }: Props) {
 	const fetchAnimeList = async () => {
 		setLoading(true);
 		try {
-			const response = await fetch(
-				`https://kujira.unusualoticramo.workers.dev/${selectedProvider}/latest`
+			const response = await axios.get(
+				`https://kujira.unusualoticramo.workers.dev/${selectedProvider}/latest`,
+				{
+					headers: {
+						'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+
+						'Accept': 'application/json',
+					}
+				}
 			);
 
-			const data = await response.json();
-			setAnimeList(data);
+			setAnimeList(response.data);
 		} catch (error) {
-			console.error(error);
+			if (axios.isAxiosError(error)) {
+				console.error(`Error: ${error.response?.status} - ${error.message}`);
+			} else {
+				console.error('An unexpected error occurred');
+			}
 		} finally {
 			setLoading(false);
 		}
