@@ -101,14 +101,26 @@ export default function App({ provider }: Props) {
 		setSelectedAnime(null);
 	};
 
+	const handleBackToProvider = () => {
+		setSelectedProvider(null);
+		setAnimeList([]);
+	};
+
 	const items = [
 		{ label: 'AnimeFLV', value: 'animeflv' },
 		{ label: 'TioAnime', value: 'tioanime' },
 	];
 
 	useInput((input, key) => {
-		if (input === 'b' && view === 'episode') {
-			handleBack();
+		if (input === 'q') {
+			process.exit(0); // Exit the program
+		}
+		if (input === 'b') {
+			if (view === 'episode') {
+				handleBack();
+			} else if (view === 'list') {
+				handleBackToProvider();
+			}
 		}
 	});
 
@@ -117,6 +129,8 @@ export default function App({ provider }: Props) {
 			<Box flexDirection="column">
 				<Text>Select anime provider:</Text>
 				<SelectInput items={items} onSelect={handleSelect} />
+				<Newline />
+				<Text color="yellow">Press 'q' to quit</Text>
 			</Box>
 		);
 	}
@@ -140,7 +154,7 @@ export default function App({ provider }: Props) {
 					</Box>
 				))}
 				<Newline />
-				<Text color="yellow">Press 'b' to go back to list</Text>
+				<Text color="yellow">Press 'b' to go back to list | Press 'q' to quit</Text>
 			</Box>
 		);
 	}
@@ -158,6 +172,8 @@ export default function App({ provider }: Props) {
 				}))}
 				onSelect={(item) => handleAnimeSelect(JSON.parse(item.value))}
 			/>
+			<Newline />
+			<Text color="yellow">Press 'b' to go back to provider selection | Press 'q' to quit</Text>
 		</Box>
 	);
 }
