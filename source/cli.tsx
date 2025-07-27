@@ -1,29 +1,28 @@
 #!/usr/bin/env node
 import React from 'react';
-import {render} from 'ink';
+import { render } from 'ink';
 import meow from 'meow';
 import App from './app.js';
 
 const cli = meow(
 	`
-	Usage
-	  $ Kujira-CLI
+  Usage
+    $ Kujira-CLI
 
-	Options
-		--name  Your name
+  Options
+    --provider  Anime provider (animeflv or tioanime)
 
-	Examples
-	  $ Kujira-CLI --name=Jane
-	  Hello, Jane
+  Examples
+    $ Kujira-CLI --provider=tioanime
 `,
 	{
 		importMeta: import.meta,
 		flags: {
-			name: {
+			provider: {
 				type: 'string',
 			},
 		},
-	},
+	}
 );
 
-render(<App name={cli.flags.name} />);
+render(<App provider={cli.flags.provider} />);
