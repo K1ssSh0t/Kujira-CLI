@@ -91,7 +91,7 @@ const (
 )
 
 type model struct {
-	stage           int // 0: menu, 1: episodes, 2: episode detail, 3: anime info
+	stage           int // 0: menu, 1: episodes, 2: episode detail, 3: anime info, 4: search
 	selectedSrc     source
 	episodes        []LatestEpisode
 	selectedEpisode *LatestEpisode
@@ -100,6 +100,19 @@ type model struct {
 	anime           *Anime
 	status          string
 	err             error
+	searchQuery     string // Para búsqueda
+}
+
+type SearchResult struct {
+	Name  string `json:"name"`
+	Image string `json:"image"`
+	Url   string `json:"url"`
+	Type  string `json:"type"`
+}
+
+type searchMsg struct {
+	results []SearchResult
+	err     error
 }
 
 // Estilos con lipgloss
@@ -227,6 +240,32 @@ func fetchAnime(src source, animeID string) tea.Msg {
 	return animeMsg{anime: &anime}
 }
 
+func fetchSearch(src source, query string) tea.Msg {
+	var url string
+	if src == animeflv {
+		url = fmt.Sprintf("https://kujira.unusualoticramo.workers.dev/animeflv/search?title=%s", query)
+	} else {
+		url = fmt.Sprintf("https://kujira.unusualoticramo.workers.dev/tioanime/search?title=%s", query)
+	}
+	// fmt.Print("Buscando ennnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn: ", url, "\n")
+	client := http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return searchMsg{err: err}
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return searchMsg{err: err}
+	}
+	var results []SearchResult
+	// fmt.Printf("Resultados de búsquedaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: %s\n", string(body))
+	if err := json.Unmarshal(body, &results); err != nil {
+		return searchMsg{err: err}
+	}
+	return searchMsg{results: results}
+}
+
 // Inicialización del modelo
 func initialModel() model {
 	return model{
@@ -304,6 +343,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectedIndex = 0
 				m.episodes = nil
 				m.status = "Selecciona una fuente:"
+			case "s": // Nueva opción para buscar episodios
+				m.stage = 4
+				m.status = "Introduce tu búsqueda:"
+				return m, nil
 			}
 		case 2: // Detalle de episodio
 			switch msg.String() {
@@ -467,6 +510,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "q", "ctrl+c":
 				return m, tea.Quit
 			}
+		case 4: // Search input
+			switch msg.String() {
+			case "enter":
+				if m.searchQuery != "" {
+					m.stage = 1
+					m.status = "Buscando..."
+					return m, func() tea.Msg { return fetchSearch(m.selectedSrc, m.searchQuery) }
+				}
+			case "esc":
+				m.stage = 1
+				m.searchQuery = ""
+				m.status = "Selecciona un episodio:"
+				return m, nil
+			case "backspace":
+				if len(m.searchQuery) > 0 {
+					m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
+				}
+			default:
+				if len(msg.String()) == 1 {
+					m.searchQuery += msg.String()
+				}
+			}
 		}
 	case episodesMsg:
 		if msg.err != nil {
@@ -510,6 +575,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = errorStyle.Render(fmt.Sprintf("Error: %v", msg.err))
 	case finishedMsg:
 		m.status = finishedStyle.Render("✓ Reproducción finalizada")
+
+	case searchMsg:
+		if msg.err != nil {
+			m.err = msg.err
+			m.status = "Error al buscar episodios"
+		} else {
+			// Convert SearchResults to LatestEpisodes for display
+			var episodes []LatestEpisode
+			for _, result := range msg.results {
+				episodes = append(episodes, LatestEpisode{
+					Title:   result.Name,
+					Image:   result.Image,
+					Url:     result.Url,
+					Episode: result.Type,
+				})
+			}
+			m.episodes = episodes
+			m.status = "Resultados de búsqueda:"
+		}
 	}
 
 	return m, nil
@@ -533,7 +617,7 @@ func (m model) View() string {
 		s += "\nUsa ↑/↓ y Enter para seleccionar. 'q' para salir."
 		return s
 	case 1:
-		s := titleStyle.Render("Últimos Episodios") + "\n\n"
+		s := titleStyle.Render("Resultados") + "\n\n"
 		for i, ep := range m.episodes {
 			cursor := "  "
 			if m.selectedIndex == i {
@@ -541,7 +625,8 @@ func (m model) View() string {
 			}
 			s += fmt.Sprintf("%s%s [%s]\n", cursor, ep.Title, ep.Episode)
 		}
-		s += "\nEnter para ver episodio, 'esc' para volver, 'q' para salir."
+		s += "\nEnter para ver episodio, 's' para buscar, 'esc' para volver, 'q' para salir."
+
 		return s
 	case 2:
 		if m.episodeDetail == nil {
@@ -606,6 +691,11 @@ func (m model) View() string {
 			s += fmt.Sprintf("%s%s\n", cursor, ep.Name)
 		}
 		s += "\n'enter' para ver episodio, 'esc' para volver, 'q' para salir."
+		return s
+	case 4: // Search input
+		s := titleStyle.Render("Buscar") + "\n\n"
+		s += fmt.Sprintf("Búsqueda: %s\n", m.searchQuery)
+		s += "\nPresiona Enter para buscar o Esc para cancelar"
 		return s
 	}
 	return m.status
