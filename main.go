@@ -285,12 +285,21 @@ func extractEpisodeID(url string) string {
 	return parts[len(parts)-1]
 }
 
-func extractAnimeID(episodeURL string) string {
-	parts := strings.Split(episodeURL, "-")
+func extractAnimeID(url string) string {
+	// Para URLs de búsqueda (/animeflv/anime/naruto)
+	if strings.Contains(url, "/anime/") {
+		parts := strings.Split(url, "/anime/")
+		if len(parts) > 1 {
+			return parts[1]
+		}
+	}
+
+	// Para URLs de episodios (comportamiento original)
+	parts := strings.Split(url, "-")
 	if len(parts) > 1 {
 		return strings.Join(parts[:len(parts)-1], "-")
 	}
-	return episodeURL // Devuelve la URL original si no hay guiones
+	return url
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -332,10 +341,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				ep := m.episodes[m.selectedIndex]
 				m.selectedEpisode = &ep
-				episodeID := extractEpisodeID(ep.Url) // Extrae solo el ID del episodio
-				m.stage = 2
-				m.status = "Cargando episodio..."
-				return m, func() tea.Msg { return fetchEpisodeDetail(m.selectedSrc, episodeID) }
+
+				// Verificar si estamos viendo resultados de búsqueda (animes)
+				if strings.Contains(m.status, "Resultados de búsqueda:") {
+					// Extraer ID del anime y cargar su información
+					animeID := extractAnimeID(ep.Url)
+					m.stage = 3
+					m.status = "Cargando información del anime..."
+					return m, func() tea.Msg { return fetchAnime(m.selectedSrc, animeID) }
+				} else {
+					// Comportamiento normal para episodios
+					episodeID := extractEpisodeID(ep.Url)
+					m.stage = 2
+					m.status = "Cargando episodio..."
+					return m, func() tea.Msg { return fetchEpisodeDetail(m.selectedSrc, episodeID) }
+				}
 			case "q", "ctrl+c":
 				return m, tea.Quit
 			case "esc", "left", "h":
@@ -579,9 +599,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case searchMsg:
 		if msg.err != nil {
 			m.err = msg.err
-			m.status = "Error al buscar episodios"
+			m.status = "Error al buscar"
 		} else {
-			// Convert SearchResults to LatestEpisodes for display
 			var episodes []LatestEpisode
 			for _, result := range msg.results {
 				episodes = append(episodes, LatestEpisode{
@@ -592,6 +611,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				})
 			}
 			m.episodes = episodes
+			m.selectedIndex = 0
 			m.status = "Resultados de búsqueda:"
 		}
 	}
@@ -623,10 +643,19 @@ func (m model) View() string {
 			if m.selectedIndex == i {
 				cursor = cursorStyle.Render("➤ ")
 			}
-			s += fmt.Sprintf("%s%s [%s]\n", cursor, ep.Title, ep.Episode)
-		}
-		s += "\nEnter para ver episodio, 's' para buscar, 'esc' para volver, 'q' para salir."
 
+			if strings.Contains(m.status, "Resultados de búsqueda:") {
+				s += fmt.Sprintf("%s%s (%s)\n", cursor, ep.Title, ep.Episode)
+			} else {
+				s += fmt.Sprintf("%s%s [Episodio %s]\n", cursor, ep.Title, ep.Episode)
+			}
+		}
+
+		if strings.Contains(m.status, "Resultados de búsqueda:") {
+			s += "\nEnter para ver anime, 'esc' para volver, 'q' para salir."
+		} else {
+			s += "\nEnter para ver episodio, 's' para buscar, 'esc' para volver, 'q' para salir."
+		}
 		return s
 	case 2:
 		if m.episodeDetail == nil {
