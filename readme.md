@@ -23,3 +23,22 @@ $ Kujira-CLI --help
     $ Kujira-CLI --name=Jane
     Hello, Jane
 ```
+```ts
+const bin = Bun.file('./dist/bin.js');
+let content = await new Response(bin).text();
+const pattern = /var Yoga = await initYoga\(await E\(_\(import\.meta\.url\)\.resolve\("\.\/yoga\.wasm"\)\)\);/g;
+const replacement = `import initYogaAsm from 'yoga-wasm-web/asm'; const Yoga = initYogaAsm();`;
+content = content.replace(pattern, replacement);
+await Bun.write('./dist/bin.js', content);
+
+
+```
+
+
+```
+build:
+	@bun build --bundle source/cli.tsx --outfile dist/bin.js --target=bun
+	@bun shim.ts
+	@bun build --compile --minify --sourcemap dist/bin.js --outfile dist/bin
+	@rm bin.js
+```
