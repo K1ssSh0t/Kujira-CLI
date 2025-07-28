@@ -377,6 +377,8 @@ export default function App({ provider }: Props) {
 
 	// In episode view, add info instruction
 	if (view === 'episode' && selectedAnime) {
+		const allowedServers = ['stape', 'streamtape', 'voe', 'yourupload'];
+
 		return (
 			<Box flexDirection="column" height="100%" borderStyle="round" borderColor="blue" padding={1}>
 				<Box flexDirection="column">
@@ -385,11 +387,22 @@ export default function App({ provider }: Props) {
 					<Text>Available Servers:</Text>
 					<Newline />
 					<SelectInput
-						items={selectedAnime.servers.map((server) => ({
-							label: `${server.name}: ${server.url}`,
-							value: JSON.stringify(server)
-						}))}
-						onSelect={(item) => playVideo(JSON.parse(item.value))}
+						items={selectedAnime.servers.map((server, index) => {
+							const isAllowed = allowedServers.some(name =>
+								server.name.toLowerCase().includes(name)
+							);
+							return {
+								label: `${isAllowed ? '' : '[X] '}${server.name} : ${server.url}`,
+								value: isAllowed ? JSON.stringify(server) : `disabled-${index}`,
+								isDisabled: !isAllowed,
+
+							};
+						})}
+						onSelect={(item) => {
+							if (item.value && !item.value.startsWith('disabled-')) {
+								playVideo(JSON.parse(item.value));
+							}
+						}}
 					/>
 					<Newline />
 					<Text color="yellow">
