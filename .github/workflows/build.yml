@@ -1,8 +1,8 @@
-name: Go Build
+name: Bun Build
 
 on:
   push:
-    branches: ['main']
+    branches: ['master']
 
 jobs:
   build-linux:
@@ -10,42 +10,44 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v4
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v1
         with:
-          go-version: '1.24.x'
-          cache: true
+          bun-version: latest
 
-      - name: Build
-        # SOLUCIÓN: Compila solo el paquete main, no todos los paquetes
-        run: go build -v -o kujira-cli_linux .
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build Linux Executable
+        run: bun build ./source/cli.tsx --compile --target linux-x64 --outfile kujira-cli-linux
 
       - name: Fix Linux permissions
-        run: chmod +x kujira-cli_linux
+        run: chmod +x kujira-cli-linux
 
-      - name: Upload Artifact
+      - name: Upload Linux Artifact
         uses: actions/upload-artifact@v4
         with:
           name: kujira-cli-linux
-          path: kujira-cli_linux
+          path: kujira-cli-linux
 
   build-windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v4
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v1
         with:
-          go-version: '1.24.x'
-          cache: true
+          bun-version: latest
 
-      - name: Build
-        # Misma solución para Windows
-        run: go build -v -o kujira-cli_windows.exe .
+      - name: Install dependencies
+        run: bun install
 
-      - name: Upload Artifact
+      - name: Build Windows Executable
+        run: bun build ./source/cli.tsx --compile --target windows-x64 --outfile kujira-cli-windows.exe
+
+      - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
           name: kujira-cli-windows
-          path: kujira-cli_windows.exe
+          path: kujira-cli-windows.exe
