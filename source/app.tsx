@@ -254,17 +254,23 @@ export default function App({ provider }: Props) {
 		setSearchResults([]);
 	};
 
-	useInput((input, _key) => {
+	useInput((input, key) => {
 		if (input === 'q') {
 			console.clear();
 			exit();
 		}
 
-		if (input === 'b') {
-			if (isSearching) {
+		// Ignorar todas las teclas especiales cuando estamos en modo búsqueda
+		// excepto la tecla Escape para cancelar
+		if (isSearching) {
+			if (key.escape) {
 				resetSearchStates();
-				return;
 			}
+			return;
+		}
+
+		// El resto de los manejadores de teclas solo se ejecutarán si no estamos buscando
+		if (input === 'b') {
 			if (view === 'search') {
 				setView('list');
 				resetSearchStates();
