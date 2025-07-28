@@ -49,13 +49,16 @@ type AnimeInfo = {
 	}[];
 };
 
+// Primero, añade un nuevo tipo para el historial de vistas
+type ViewType = 'list' | 'episode' | 'info' | 'search';
+
 export default function App({ provider }: Props) {
 	const { exit } = useApp();
 	const [selectedProvider, setSelectedProvider] = useState<string | null>(provider || null);
 	const [animeList, setAnimeList] = useState<AnimeItem[]>([]);
 	const [loading, setLoading] = useState(false);
 	const [selectedAnime, setSelectedAnime] = useState<EpisodeDetails | null>(null);
-	const [view, setView] = useState<'list' | 'episode' | 'info' | 'search'>('list');
+	const [view, setView] = useState<ViewType>('list');
 	const [animeInfo, setAnimeInfo] = useState<AnimeInfo | null>(null);
 
 	// Add currentAnimeItem state to store the selected anime from the list
@@ -74,6 +77,9 @@ export default function App({ provider }: Props) {
 		url: string;
 		type: string;
 	}>>([]);
+
+	// Añade el estado para el historial de vistas cerca de los otros estados
+	const [viewHistory, setViewHistory] = useState<ViewType[]>(['list']);
 
 	useEffect(() => {
 		if (selectedProvider) {
@@ -118,7 +124,7 @@ export default function App({ provider }: Props) {
 				}
 			);
 			setSelectedAnime(response.data);
-			setView('episode');
+			pushView('episode');
 		} catch (error) {
 			if (axios.isAxiosError(error)) {
 				console.error(`Error: ${error.response?.status} - ${error.message}`);
@@ -150,7 +156,7 @@ export default function App({ provider }: Props) {
 				}
 			);
 			setAnimeInfo(response.data);
-			setView('info');
+			pushView('info');
 		} catch (error) {
 			if (axios.isAxiosError(error)) {
 				console.error(`Error: ${error.response?.status} - ${error.message}`);
@@ -235,7 +241,7 @@ export default function App({ provider }: Props) {
 				}
 			);
 			setSearchResults(response.data);
-			setView('search');
+			pushView('search');
 		} catch (error) {
 			if (axios.isAxiosError(error)) {
 				console.error(`Error: ${error.response?.status} - ${error.message}`);
@@ -254,14 +260,29 @@ export default function App({ provider }: Props) {
 		setSearchResults([]);
 	};
 
+	// Modifica la función que cambia las vistas para mantener el historial
+	const pushView = (newView: ViewType) => {
+		setViewHistory(prev => [...prev, newView]);
+		setView(newView);
+	};
+
+	// Añade una función para manejar el regreso
+	const handleViewBack = () => {
+		if (viewHistory.length > 1) {
+			const newHistory = [...viewHistory];
+			newHistory.pop(); // Elimina la vista actual
+			const previousView = newHistory[newHistory.length - 1] || 'list';
+			setView(previousView);
+			setViewHistory(newHistory);
+		}
+	};
+
 	useInput((input, key) => {
 		if (input === 'q') {
 			console.clear();
 			exit();
 		}
 
-		// Ignorar todas las teclas especiales cuando estamos en modo búsqueda
-		// excepto la tecla Escape para cancelar
 		if (isSearching) {
 			if (key.escape) {
 				resetSearchStates();
@@ -269,22 +290,14 @@ export default function App({ provider }: Props) {
 			return;
 		}
 
-		// El resto de los manejadores de teclas solo se ejecutarán si no estamos buscando
 		if (input === 'b') {
-			if (view === 'search') {
-				setView('list');
-				resetSearchStates();
-				return;
-			}
-			if (view === 'info') {
-				setView('list');
-				setAnimeInfo(null);
-				setCurrentPage(0);
-				resetSearchStates();
-			} else if (view === 'episode') {
-				handleBack();
-			} else if (view === 'list') {
+			if (!isSearching && view === 'list') {
 				handleBackToProvider();
+			} else {
+				handleViewBack();
+				if (view === 'list') {
+					resetSearchStates();
+				}
 			}
 		}
 
