@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Text, Box, Newline, useInput } from 'ink';
+import { Text, Box, Newline, useInput, useApp } from 'ink';
 import SelectInput from 'ink-select-input';
 import axios from 'axios';
 import open from 'open';
@@ -49,6 +49,7 @@ type AnimeInfo = {
 };
 
 export default function App({ provider }: Props) {
+	const { exit } = useApp();
 	const [selectedProvider, setSelectedProvider] = useState<string | null>(provider || null);
 	const [animeList, setAnimeList] = useState<AnimeItem[]>([]);
 	const [loading, setLoading] = useState(false);
@@ -209,7 +210,8 @@ export default function App({ provider }: Props) {
 
 	useInput((input, _key) => {
 		if (input === 'q') {
-			process.exit(0); // Exit the program
+			console.clear();
+			exit();
 		}
 		if (input === 'b') {
 			if (view === 'info') {
@@ -231,6 +233,11 @@ export default function App({ provider }: Props) {
 		}
 	});
 
+	// // Add clear screen effect when changing views
+	// useEffect(() => {
+	// 	console.clear(); // Clear the terminal
+	// }, [view, selectedProvider]); // Re-run when view or provider changes
+
 	// Update info view
 	if (view === 'info' && animeInfo) {
 		const start = currentPage * ITEMS_PER_PAGE;
@@ -239,7 +246,7 @@ export default function App({ provider }: Props) {
 		const totalPages = Math.ceil(animeInfo.episodes.length / ITEMS_PER_PAGE);
 
 		return (
-			<Box borderStyle="round" borderColor="blue" padding={1}>
+			<Box flexDirection="column" height="100%" borderStyle="round" borderColor="blue" padding={1}>
 				<Box flexDirection="column">
 					<Text bold>{animeInfo.title}</Text>
 					{animeInfo.title_alt !== animeInfo.title && (
@@ -277,7 +284,7 @@ export default function App({ provider }: Props) {
 	// In episode view, add info instruction
 	if (view === 'episode' && selectedAnime) {
 		return (
-			<Box borderStyle="round" borderColor="blue" padding={1}>
+			<Box flexDirection="column" height="100%" borderStyle="round" borderColor="blue" padding={1}>
 				<Box flexDirection="column">
 					<Text bold>{selectedAnime.title}</Text>
 					<Newline />
@@ -301,7 +308,7 @@ export default function App({ provider }: Props) {
 
 	if (!selectedProvider) {
 		return (
-			<Box borderStyle="round" borderColor="blue" padding={1}>
+			<Box flexDirection="column" height="100%" borderStyle="round" borderColor="blue" padding={1}>
 				<Box flexDirection="column">
 					<Text>Select anime provider:</Text>
 					<SelectInput items={items} onSelect={handleSelect} />
@@ -314,14 +321,14 @@ export default function App({ provider }: Props) {
 
 	if (loading) {
 		return (
-			<Box borderStyle="round" borderColor="blue" padding={1}>
+			<Box flexDirection="column" height="100%" borderStyle="round" borderColor="blue" padding={1}>
 				<Text>Loading...</Text>
 			</Box>
 		);
 	}
 
 	return (
-		<Box borderStyle="round" borderColor="blue" padding={1}>
+		<Box flexDirection="column" height="100%" borderStyle="round" borderColor="blue" padding={1}>
 			<Box flexDirection="column">
 				<Text>
 					Latest from <Text color="green">{selectedProvider}</Text>:
