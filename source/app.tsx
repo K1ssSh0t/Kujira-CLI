@@ -251,40 +251,39 @@ export default function App({ provider }: Props) {
 			console.clear();
 			exit();
 		}
-		if (input === 'b') {
-			if (isSearching) {
-				setIsSearching(false);
-				setSearchQuery('');
-				return;
-			}
-			if (view === 'search') {  // Añadir este caso
+
+		// Solo procesar la tecla 'b' si no estamos escribiendo en el input de búsqueda
+		if (input === 'b' && !isSearching) {
+			if (view === 'search') {
 				setView('list');
 				setSearchResults([]);
 				setSearchQuery('');
-				setIsSearching(false); // Añadir esta línea
 				return;
 			}
 			if (view === 'info') {
 				setView('episode');
 				setAnimeInfo(null);
-				setCurrentPage(0); // Reset pagination when going back
+				setCurrentPage(0);
 			} else if (view === 'episode') {
 				handleBack();
 			} else if (view === 'list') {
 				handleBackToProvider();
 			}
 		}
+
 		if (input === 'i' && view === 'episode' && currentAnimeItem) {
 			fetchAnimeInfo(currentAnimeItem);
 		}
+
 		if (view === 'info') {
 			if (input === 'n') handlePageChange('next');
 			if (input === 'p') handlePageChange('prev');
 		}
-		// Handle search input
 
-		if (input === 's' && view === 'list') {
+		// Solo activar la búsqueda si estamos en la vista de lista y no estamos ya buscando
+		if (input === 's' && view === 'list' && !isSearching) {
 			setIsSearching(true);
+			setSearchQuery('');
 		}
 	});
 
@@ -426,10 +425,10 @@ export default function App({ provider }: Props) {
 							value={searchQuery}
 							onChange={(value) => setSearchQuery(value)}
 							onSubmit={(value) => {
-								setIsSearching(false);
 								if (value.trim()) {
 									searchAnime(value);
 								}
+								setIsSearching(false);
 							}}
 						/>
 						<Newline />
