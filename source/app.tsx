@@ -59,6 +59,10 @@ export default function App({ provider }: Props) {
 	// Add currentAnimeItem state to store the selected anime from the list
 	const [currentAnimeItem, setCurrentAnimeItem] = useState<AnimeItem | null>(null);
 
+	// Add new state for pagination
+	const [currentPage, setCurrentPage] = useState(0);
+	const ITEMS_PER_PAGE = 10;
+
 	useEffect(() => {
 		if (selectedProvider) {
 			fetchAnimeList();
@@ -118,6 +122,9 @@ export default function App({ provider }: Props) {
 	const fetchAnimeInfo = async (animeItem: AnimeItem) => {
 		setLoading(true);
 		try {
+			// Reset pagination before fetching new anime info
+			setCurrentPage(0);
+
 			// Remove episode number and 'episode' from URL
 			const animeUrl = animeItem.url.replace(/\/episode\/(.+?)-\d+$/, '/anime/$1');
 
@@ -190,7 +197,17 @@ export default function App({ provider }: Props) {
 		{ label: 'TioAnime', value: 'tioanime' },
 	];
 
-	useInput((input, key) => {
+	// Add function to handle page navigation
+	const handlePageChange = (direction: 'next' | 'prev') => {
+		if (direction === 'next' && animeInfo) {
+			const maxPages = Math.ceil(animeInfo.episodes.length / ITEMS_PER_PAGE) - 1;
+			setCurrentPage(prev => Math.min(prev + 1, maxPages));
+		} else {
+			setCurrentPage(prev => Math.max(prev - 1, 0));
+		}
+	};
+
+	useInput((input, _key) => {
 		if (input === 'q') {
 			process.exit(0); // Exit the program
 		}
@@ -198,6 +215,7 @@ export default function App({ provider }: Props) {
 			if (view === 'info') {
 				setView('episode');
 				setAnimeInfo(null);
+				setCurrentPage(0); // Reset pagination when going back
 			} else if (view === 'episode') {
 				handleBack();
 			} else if (view === 'list') {
@@ -207,31 +225,19 @@ export default function App({ provider }: Props) {
 		if (input === 'i' && view === 'episode' && currentAnimeItem) {
 			fetchAnimeInfo(currentAnimeItem);
 		}
+		if (view === 'info') {
+			if (input === 'n') handlePageChange('next');
+			if (input === 'p') handlePageChange('prev');
+		}
 	});
-
-	if (!selectedProvider) {
-		return (
-			<Box borderStyle="round" borderColor="blue" padding={1}>
-				<Box flexDirection="column">
-					<Text>Select anime provider:</Text>
-					<SelectInput items={items} onSelect={handleSelect} />
-					<Newline />
-					<Text color="yellow">Press 'q' to quit</Text>
-				</Box>
-			</Box>
-		);
-	}
-
-	if (loading) {
-		return (
-			<Box borderStyle="round" borderColor="blue" padding={1}>
-				<Text>Loading...</Text>
-			</Box>
-		);
-	}
 
 	// Update info view
 	if (view === 'info' && animeInfo) {
+		const start = currentPage * ITEMS_PER_PAGE;
+		const end = start + ITEMS_PER_PAGE;
+		const currentEpisodes = animeInfo.episodes.slice(start, end);
+		const totalPages = Math.ceil(animeInfo.episodes.length / ITEMS_PER_PAGE);
+
 		return (
 			<Box borderStyle="round" borderColor="blue" padding={1}>
 				<Box flexDirection="column">
@@ -249,17 +255,19 @@ export default function App({ provider }: Props) {
 					<Text>Synopsis:</Text>
 					<Text wrap="wrap">{animeInfo.synopsis}</Text>
 					<Newline />
-					{animeInfo.related?.length > 0 && (
-						<>
-							<Text bold>Related Anime:</Text>
-							{animeInfo.related.map((rel) => (
-								<Text key={rel.url}>{rel.title}</Text>
-							))}
-							<Newline />
-						</>
-					)}
-					<Text color="blue">Total Episodes: {animeInfo.episodes.length}</Text>
+					<Text bold>Episodes:</Text>
+					<Text color="blue">Page {currentPage + 1} of {totalPages}</Text>
 					<Newline />
+					<SelectInput
+						items={currentEpisodes.map((episode) => ({
+							label: `Episode ${episode.num}: ${episode.name}`,
+							value: episode.url
+						}))}
+						onSelect={(item) => fetchEpisodeDetails(item.value)}
+					/>
+					<Newline />
+					{currentPage > 0 && <Text>Press 'p' for previous page</Text>}
+					{end < animeInfo.episodes.length && <Text>Press 'n' for next page</Text>}
 					<Text color="yellow">Press 'b' to go back to servers | Press 'q' to quit</Text>
 				</Box>
 			</Box>
@@ -287,6 +295,27 @@ export default function App({ provider }: Props) {
 						Press 'i' for anime info | Press 'b' to go back to list | Press 'q' to quit
 					</Text>
 				</Box>
+			</Box>
+		);
+	}
+
+	if (!selectedProvider) {
+		return (
+			<Box borderStyle="round" borderColor="blue" padding={1}>
+				<Box flexDirection="column">
+					<Text>Select anime provider:</Text>
+					<SelectInput items={items} onSelect={handleSelect} />
+					<Newline />
+					<Text color="yellow">Press 'q' to quit</Text>
+				</Box>
+			</Box>
+		);
+	}
+
+	if (loading) {
+		return (
+			<Box borderStyle="round" borderColor="blue" padding={1}>
+				<Text>Loading...</Text>
 			</Box>
 		);
 	}
