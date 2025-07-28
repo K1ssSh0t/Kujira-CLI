@@ -151,54 +151,64 @@ export default function App({ provider }: Props) {
 
 	if (!selectedProvider) {
 		return (
-			<Box flexDirection="column">
-				<Text>Select anime provider:</Text>
-				<SelectInput items={items} onSelect={handleSelect} />
-				<Newline />
-				<Text color="yellow">Press 'q' to quit</Text>
+			<Box borderStyle="round" borderColor="blue" padding={1}>
+				<Box flexDirection="column">
+					<Text>Select anime provider:</Text>
+					<SelectInput items={items} onSelect={handleSelect} />
+					<Newline />
+					<Text color="yellow">Press 'q' to quit</Text>
+				</Box>
 			</Box>
 		);
 	}
 
 	if (loading) {
-		return <Text>Loading...</Text>;
+		return (
+			<Box borderStyle="round" borderColor="blue" padding={1}>
+				<Text>Loading...</Text>
+			</Box>
+		);
 	}
 
 	if (view === 'episode' && selectedAnime) {
 		return (
-			<Box flexDirection="column">
-				<Text bold>{selectedAnime.title}</Text>
-				<Newline />
-				<Text>Available Servers:</Text>
-				<Newline />
-				<SelectInput
-					items={selectedAnime.servers.map((server) => ({
-						label: `${server.name}: ${server.url}`,
-						value: JSON.stringify(server)
-					}))}
-					onSelect={(item) => playVideo(JSON.parse(item.value))}
-				/>
-				<Newline />
-				<Text color="yellow">Press 'b' to go back to list | Press 'q' to quit</Text>
+			<Box borderStyle="round" borderColor="blue" padding={1}>
+				<Box flexDirection="column">
+					<Text bold>{selectedAnime.title}</Text>
+					<Newline />
+					<Text>Available Servers:</Text>
+					<Newline />
+					<SelectInput
+						items={selectedAnime.servers.map((server) => ({
+							label: `${server.name}: ${server.url}`,
+							value: JSON.stringify(server)
+						}))}
+						onSelect={(item) => playVideo(JSON.parse(item.value))}
+					/>
+					<Newline />
+					<Text color="yellow">Press 'b' to go back to list | Press 'q' to quit</Text>
+				</Box>
 			</Box>
 		);
 	}
 
 	return (
-		<Box flexDirection="column">
-			<Text>
-				Latest from <Text color="green">{selectedProvider}</Text>:
-			</Text>
-			<Newline />
-			<SelectInput
-				items={animeList.map((anime) => ({
-					label: `${anime.title} - Episode ${anime.episode}`,
-					value: JSON.stringify(anime)
-				}))}
-				onSelect={(item) => handleAnimeSelect(JSON.parse(item.value))}
-			/>
-			<Newline />
-			<Text color="yellow">Press 'b' to go back to provider selection | Press 'q' to quit</Text>
+		<Box borderStyle="round" borderColor="blue" padding={1}>
+			<Box flexDirection="column">
+				<Text>
+					Latest from <Text color="green">{selectedProvider}</Text>:
+				</Text>
+				<Newline />
+				<SelectInput
+					items={animeList.map((anime) => ({
+						label: `${anime.title} - Episode ${anime.episode}`,
+						value: JSON.stringify(anime)
+					}))}
+					onSelect={(item) => handleAnimeSelect(JSON.parse(item.value))}
+				/>
+				<Newline />
+				<Text color="yellow">Press 'b' to go back to provider selection | Press 'q' to quit</Text>
+			</Box>
 		</Box>
 	);
 }
