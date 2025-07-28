@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Text, Box, Newline, useInput } from 'ink';
 import SelectInput from 'ink-select-input';
 import axios from 'axios';
+import open from 'open';
 
 type AnimeItem = {
 	title: string;
@@ -32,6 +33,7 @@ export default function App({ provider }: Props) {
 	const [loading, setLoading] = useState(false);
 	const [selectedAnime, setSelectedAnime] = useState<EpisodeDetails | null>(null);
 	const [view, setView] = useState<'list' | 'episode'>('list');
+	// const [selectedServer, setSelectedServer] = useState<Server | null>(null);
 
 	useEffect(() => {
 		if (selectedProvider) {
@@ -106,6 +108,29 @@ export default function App({ provider }: Props) {
 		setAnimeList([]);
 	};
 
+	const playVideo = async (server: Server) => {
+		const mpvArgs = [
+			'--force-window=immediate',
+			`--http-header-fields=Referer: ${server.url}`,
+		];
+
+		if (server.source) {
+			await open(server.source, {
+				app: {
+					name: 'mpv',
+					arguments: mpvArgs,
+				},
+			});
+		} else {
+			await open(server.url, {
+				app: {
+					name: 'mpv',
+					arguments: mpvArgs,
+				},
+			});
+		}
+	};
+
 	const items = [
 		{ label: 'AnimeFLV', value: 'animeflv' },
 		{ label: 'TioAnime', value: 'tioanime' },
@@ -146,13 +171,13 @@ export default function App({ provider }: Props) {
 				<Newline />
 				<Text>Available Servers:</Text>
 				<Newline />
-				{selectedAnime.servers.map((server) => (
-					<Box key={server.name}>
-						<Text>
-							{server.name}: <Text color="blue">{server.url}</Text>
-						</Text>
-					</Box>
-				))}
+				<SelectInput
+					items={selectedAnime.servers.map((server) => ({
+						label: `${server.name}: ${server.url}`,
+						value: JSON.stringify(server)
+					}))}
+					onSelect={(item) => playVideo(JSON.parse(item.value))}
+				/>
 				<Newline />
 				<Text color="yellow">Press 'b' to go back to list | Press 'q' to quit</Text>
 			</Box>
