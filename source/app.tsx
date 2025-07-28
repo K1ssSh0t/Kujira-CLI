@@ -174,6 +174,7 @@ export default function App({ provider }: Props) {
 	const handleBack = () => {
 		setView('list');
 		setSelectedAnime(null);
+		resetSearchStates();
 	};
 
 	const handleBackToProvider = () => {
@@ -246,24 +247,34 @@ export default function App({ provider }: Props) {
 		}
 	};
 
+	// Primero, vamos a crear una función helper para resetear los estados de búsqueda
+	const resetSearchStates = () => {
+		setIsSearching(false);
+		setSearchQuery('');
+		setSearchResults([]);
+	};
+
 	useInput((input, _key) => {
 		if (input === 'q') {
 			console.clear();
 			exit();
 		}
 
-		// Solo procesar la tecla 'b' si no estamos escribiendo en el input de búsqueda
-		if (input === 'b' && !isSearching) {
+		if (input === 'b') {
+			if (isSearching) {
+				resetSearchStates();
+				return;
+			}
 			if (view === 'search') {
 				setView('list');
-				setSearchResults([]);
-				setSearchQuery('');
+				resetSearchStates();
 				return;
 			}
 			if (view === 'info') {
-				setView('episode');
+				setView('list');
 				setAnimeInfo(null);
 				setCurrentPage(0);
+				resetSearchStates();
 			} else if (view === 'episode') {
 				handleBack();
 			} else if (view === 'list') {
