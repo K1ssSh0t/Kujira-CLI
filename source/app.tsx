@@ -27,13 +27,37 @@ type Props = {
 	provider?: string;
 };
 
+// Update AnimeInfo type
+type AnimeInfo = {
+	title: string;
+	title_alt: string;
+	img: string;
+	status: boolean;
+	synopsis: string;
+	genres: string[];
+	episodes: {
+		name: string;
+		thumbnail: string;
+		url: string;
+		num: number;
+	}[];
+	related: {
+		title: string;
+		url: string;
+		img: string;
+	}[];
+};
+
 export default function App({ provider }: Props) {
 	const [selectedProvider, setSelectedProvider] = useState<string | null>(provider || null);
 	const [animeList, setAnimeList] = useState<AnimeItem[]>([]);
 	const [loading, setLoading] = useState(false);
 	const [selectedAnime, setSelectedAnime] = useState<EpisodeDetails | null>(null);
-	const [view, setView] = useState<'list' | 'episode'>('list');
-	// const [selectedServer, setSelectedServer] = useState<Server | null>(null);
+	const [view, setView] = useState<'list' | 'episode' | 'info'>('list');
+	const [animeInfo, setAnimeInfo] = useState<AnimeInfo | null>(null);
+
+	// Add currentAnimeItem state to store the selected anime from the list
+	const [currentAnimeItem, setCurrentAnimeItem] = useState<AnimeItem | null>(null);
 
 	useEffect(() => {
 		if (selectedProvider) {
@@ -90,11 +114,41 @@ export default function App({ provider }: Props) {
 		}
 	};
 
+	// Add fetch function for anime info
+	const fetchAnimeInfo = async (animeItem: AnimeItem) => {
+		setLoading(true);
+		try {
+			// Remove episode number and 'episode' from URL
+			const animeUrl = animeItem.url.replace(/\/episode\/(.+?)-\d+$/, '/anime/$1');
+
+			const response = await axios.get(
+				`https://kujira.unusualoticramo.workers.dev${animeUrl}`,
+				{
+					headers: {
+						'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+						'Accept': 'application/json',
+					}
+				}
+			);
+			setAnimeInfo(response.data);
+			setView('info');
+		} catch (error) {
+			if (axios.isAxiosError(error)) {
+				console.error(`Error: ${error.response?.status} - ${error.message}`);
+			} else {
+				console.error('An unexpected error occurred');
+			}
+		} finally {
+			setLoading(false);
+		}
+	};
+
 	const handleSelect = (item: { value: string }) => {
 		setSelectedProvider(item.value);
 	};
 
 	const handleAnimeSelect = (anime: AnimeItem) => {
+		setCurrentAnimeItem(anime);
 		fetchEpisodeDetails(anime.url);
 	};
 
@@ -141,11 +195,17 @@ export default function App({ provider }: Props) {
 			process.exit(0); // Exit the program
 		}
 		if (input === 'b') {
-			if (view === 'episode') {
+			if (view === 'info') {
+				setView('episode');
+				setAnimeInfo(null);
+			} else if (view === 'episode') {
 				handleBack();
 			} else if (view === 'list') {
 				handleBackToProvider();
 			}
+		}
+		if (input === 'i' && view === 'episode' && currentAnimeItem) {
+			fetchAnimeInfo(currentAnimeItem);
 		}
 	});
 
@@ -170,6 +230,43 @@ export default function App({ provider }: Props) {
 		);
 	}
 
+	// Update info view
+	if (view === 'info' && animeInfo) {
+		return (
+			<Box borderStyle="round" borderColor="blue" padding={1}>
+				<Box flexDirection="column">
+					<Text bold>{animeInfo.title}</Text>
+					{animeInfo.title_alt !== animeInfo.title && (
+						<>
+							<Text>Alt Title: {animeInfo.title_alt}</Text>
+							<Newline />
+						</>
+					)}
+					<Text>Status: {animeInfo.status ? 'Ongoing' : 'Finished'}</Text>
+					<Newline />
+					<Text>Genres: {animeInfo.genres.join(', ')}</Text>
+					<Newline />
+					<Text>Synopsis:</Text>
+					<Text wrap="wrap">{animeInfo.synopsis}</Text>
+					<Newline />
+					{animeInfo.related?.length > 0 && (
+						<>
+							<Text bold>Related Anime:</Text>
+							{animeInfo.related.map((rel) => (
+								<Text key={rel.url}>{rel.title}</Text>
+							))}
+							<Newline />
+						</>
+					)}
+					<Text color="blue">Total Episodes: {animeInfo.episodes.length}</Text>
+					<Newline />
+					<Text color="yellow">Press 'b' to go back to servers | Press 'q' to quit</Text>
+				</Box>
+			</Box>
+		);
+	}
+
+	// In episode view, add info instruction
 	if (view === 'episode' && selectedAnime) {
 		return (
 			<Box borderStyle="round" borderColor="blue" padding={1}>
@@ -186,7 +283,9 @@ export default function App({ provider }: Props) {
 						onSelect={(item) => playVideo(JSON.parse(item.value))}
 					/>
 					<Newline />
-					<Text color="yellow">Press 'b' to go back to list | Press 'q' to quit</Text>
+					<Text color="yellow">
+						Press 'i' for anime info | Press 'b' to go back to list | Press 'q' to quit
+					</Text>
 				</Box>
 			</Box>
 		);
