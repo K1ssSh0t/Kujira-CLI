@@ -4,6 +4,8 @@ import SelectInput from 'ink-select-input';
 import axios from 'axios';
 import open from 'open';
 import TextInput from 'ink-text-input';
+import { getVoeMp4 } from './extractors/voe.js';
+import { extractStreamTapeUrl } from './extractors/streamtape.js';
 
 type AnimeItem = {
 	title: string;
@@ -177,11 +179,11 @@ export default function App({ provider }: Props) {
 		fetchEpisodeDetails(anime.url);
 	};
 
-	const handleBack = () => {
-		setView('list');
-		setSelectedAnime(null);
-		resetSearchStates();
-	};
+	// const handleBack = () => {
+	// 	setView('list');
+	// 	setSelectedAnime(null);
+	// 	resetSearchStates();
+	// };
 
 	const handleBackToProvider = () => {
 		setSelectedProvider(null);
@@ -194,21 +196,29 @@ export default function App({ provider }: Props) {
 			`--http-header-fields=Referer: ${server.url}`,
 		];
 
-		if (server.source) {
-			await open(server.source, {
-				app: {
-					name: 'mpv',
-					arguments: mpvArgs,
-				},
-			});
-		} else {
-			await open(server.url, {
-				app: {
-					name: 'mpv',
-					arguments: mpvArgs,
-				},
-			});
+		let videoUrl = server.source;
+
+
+		if (server.name.toLowerCase().includes('voe')) {
+
+			videoUrl = await getVoeMp4(server.url) as string;
 		}
+		if (server.name == 'Stape') {
+
+			videoUrl = await extractStreamTapeUrl(server.url);
+
+		}
+
+		if (!videoUrl) {
+			throw new Error('Could not extract video URL');
+		}
+
+		await open(videoUrl, {
+			app: {
+				name: 'mpv',
+				arguments: mpvArgs,
+			},
+		});
 	};
 
 	const items = [
