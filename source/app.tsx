@@ -3,6 +3,7 @@ import { Text, Box, Newline, useInput, useApp } from 'ink';
 import SelectInput from 'ink-select-input';
 import axios from 'axios';
 import open from 'open';
+import TextInput from 'ink-text-input';
 
 type AnimeItem = {
 	title: string;
@@ -54,15 +55,25 @@ export default function App({ provider }: Props) {
 	const [animeList, setAnimeList] = useState<AnimeItem[]>([]);
 	const [loading, setLoading] = useState(false);
 	const [selectedAnime, setSelectedAnime] = useState<EpisodeDetails | null>(null);
-	const [view, setView] = useState<'list' | 'episode' | 'info'>('list');
+	const [view, setView] = useState<'list' | 'episode' | 'info' | 'search'>('list');
 	const [animeInfo, setAnimeInfo] = useState<AnimeInfo | null>(null);
 
 	// Add currentAnimeItem state to store the selected anime from the list
 	const [currentAnimeItem, setCurrentAnimeItem] = useState<AnimeItem | null>(null);
-
+	// Add near other state declarations
+	const [isSearching, setIsSearching] = useState(false);
 	// Add new state for pagination
 	const [currentPage, setCurrentPage] = useState(0);
 	const ITEMS_PER_PAGE = 10;
+
+	// Add search state
+	const [searchQuery, setSearchQuery] = useState('');
+	const [searchResults, setSearchResults] = useState<Array<{
+		name: string;
+		image: string;
+		url: string;
+		type: string;
+	}>>([]);
 
 	useEffect(() => {
 		if (selectedProvider) {
@@ -208,12 +219,51 @@ export default function App({ provider }: Props) {
 		}
 	};
 
+
+	// New search function using the selected provider
+	const searchAnime = async (query: string) => {
+		setLoading(true);
+		try {
+			const response = await axios.get(
+				`https://kujira.unusualoticramo.workers.dev/${selectedProvider}/search?title=${encodeURIComponent(query)}`,
+				{
+					headers: {
+						'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+						'Accept': 'application/json',
+					}
+				}
+			);
+			setSearchResults(response.data);
+			setView('search');
+		} catch (error) {
+			if (axios.isAxiosError(error)) {
+				console.error(`Error: ${error.response?.status} - ${error.message}`);
+			} else {
+				console.error('An unexpected error occurred');
+			}
+		} finally {
+			setLoading(false);
+		}
+	};
+
 	useInput((input, _key) => {
 		if (input === 'q') {
 			console.clear();
 			exit();
 		}
 		if (input === 'b') {
+			if (isSearching) {
+				setIsSearching(false);
+				setSearchQuery('');
+				return;
+			}
+			if (view === 'search') {  // Añadir este caso
+				setView('list');
+				setSearchResults([]);
+				setSearchQuery('');
+				setIsSearching(false); // Añadir esta línea
+				return;
+			}
 			if (view === 'info') {
 				setView('episode');
 				setAnimeInfo(null);
@@ -230,6 +280,11 @@ export default function App({ provider }: Props) {
 		if (view === 'info') {
 			if (input === 'n') handlePageChange('next');
 			if (input === 'p') handlePageChange('prev');
+		}
+		// Handle search input
+
+		if (input === 's' && view === 'list') {
+			setIsSearching(true);
 		}
 	});
 
@@ -306,6 +361,35 @@ export default function App({ provider }: Props) {
 		);
 	}
 
+	// Search results view
+	if (view === 'search' && searchResults.length > 0) {
+		return (
+			<Box flexDirection="column" height="100%" borderStyle="round" borderColor="blue" padding={1}>
+				<Box flexDirection="column">
+					<Text>Search results for: <Text color="green">{searchQuery}</Text></Text>
+					<Newline />
+					<SelectInput
+						items={searchResults.map((anime) => ({
+							label: `${anime.name} (${anime.type})`,
+							value: anime.url
+						}))}
+						onSelect={(item) => fetchAnimeInfo({ url: item.value } as AnimeItem)}
+					/>
+					<Newline />
+					<Text color="yellow">Press 'b' to go back to list | Press 'q' to quit</Text>
+				</Box>
+			</Box>
+		);
+	} else if (view === 'search') {
+		return (
+			<Box flexDirection="column" height="100%" borderStyle="round" borderColor="blue" padding={1}>
+				<Text>No results found for: {searchQuery}</Text>
+				<Newline />
+				<Text color="yellow">Press 'b' to go back to list | Press 'q' to quit</Text>
+			</Box>
+		);
+	}
+
 	if (!selectedProvider) {
 		return (
 			<Box flexDirection="column" height="100%" borderStyle="round" borderColor="blue" padding={1}>
@@ -327,6 +411,7 @@ export default function App({ provider }: Props) {
 		);
 	}
 
+	// Replace the existing main return statement
 	return (
 		<Box flexDirection="column" height="100%" borderStyle="round" borderColor="blue" padding={1}>
 			<Box flexDirection="column">
@@ -334,15 +419,39 @@ export default function App({ provider }: Props) {
 					Latest from <Text color="green">{selectedProvider}</Text>:
 				</Text>
 				<Newline />
-				<SelectInput
-					items={animeList.map((anime) => ({
-						label: `${anime.title} - Episode ${anime.episode}`,
-						value: JSON.stringify(anime)
-					}))}
-					onSelect={(item) => handleAnimeSelect(JSON.parse(item.value))}
-				/>
-				<Newline />
-				<Text color="yellow">Press 'b' to go back to provider selection | Press 'q' to quit</Text>
+				{isSearching ? (
+					<>
+						<Text>Search anime: </Text>
+						<TextInput
+							value={searchQuery}
+							onChange={(value) => setSearchQuery(value)}
+							onSubmit={(value) => {
+								setIsSearching(false);
+								if (value.trim()) {
+									searchAnime(value);
+								}
+							}}
+						/>
+						<Newline />
+						<Text color="yellow">
+							Press Enter to search | Press 'b' to cancel
+						</Text>
+					</>
+				) : (
+					<>
+						<SelectInput
+							items={animeList.map((anime) => ({
+								label: `${anime.title} - Episode ${anime.episode}`,
+								value: JSON.stringify(anime)
+							}))}
+							onSelect={(item) => handleAnimeSelect(JSON.parse(item.value))}
+						/>
+						<Newline />
+						<Text color="yellow">
+							Press 's' to search | Press 'b' to go back to provider selection | Press 'q' to quit
+						</Text>
+					</>
+				)}
 			</Box>
 		</Box>
 	);
