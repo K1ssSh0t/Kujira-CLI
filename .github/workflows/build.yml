@@ -1,7 +1,7 @@
 name: Build Executables
 
 on:
-  workflow_dispatch:  # Solo se ejecuta manualmente
+  workflow_dispatch:
 
 jobs:
   build:
@@ -28,9 +28,13 @@ jobs:
 
       - name: Compile executable
         run: |
+          output_file="dist/kujira-cli-${{ matrix.target }}"
+          if [ "${{ matrix.target }}" = "windows" ]; then
+            output_file="$output_file.exe"
+          fi
           bun build --compile --minify --sourcemap dist/bin.js \
             --target=bun-${{ matrix.target == 'linux' && 'linux-x64' || 'windows-x64' }} \
-            --outfile dist/kujira-cli-${{ matrix.target }}
+            --outfile $output_file
           rm dist/bin.js
 
       - name: Fix Linux permissions
@@ -41,4 +45,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: kujira-cli-${{ matrix.target }}
-          path: dist/kujira-cli-${{ matrix.target }}
+          path: dist/kujira-cli-${{ matrix.target }}${{ matrix.target == 'windows' && '.exe' || '' }}
