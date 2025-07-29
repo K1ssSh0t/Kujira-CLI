@@ -20,6 +20,9 @@ jobs:
       - name: Install dependencies
         run: bun install
 
+      - name: Create dist directory
+        run: mkdir -p dist
+
       - name: Bundle CLI
         run: bun build --bundle source/cli.tsx --outfile dist/bin.js --target=bun
 
@@ -36,6 +39,8 @@ jobs:
             --target=bun-${{ matrix.target == 'linux' && 'linux-x64' || 'windows-x64' }} \
             --outfile $output_file
           rm dist/bin.js
+          # Añadir permisos explícitos
+          chmod 644 $output_file
 
       - name: Fix Linux permissions
         if: matrix.target == 'linux'
