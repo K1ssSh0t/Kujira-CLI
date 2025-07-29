@@ -1,12 +1,14 @@
-name: Bun Build
+name: Build Executables
 
 on:
-  push:
-    branches: ['master']
+  workflow_dispatch:  # Solo se ejecuta manualmente
 
 jobs:
-  build-linux:
+  build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [linux, windows]
     steps:
       - uses: actions/checkout@v4
 
@@ -18,36 +20,25 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Build Linux Executable
-        run: bun build ./source/cli.tsx --compile --minify --sourcemap --target=bun-linux-x64 --outfile kujira-cli-linux
+      - name: Bundle CLI
+        run: bun build --bundle source/cli.tsx --outfile dist/bin.js --target=bun
+
+      - name: Run shim
+        run: bun shim.ts
+
+      - name: Compile executable
+        run: |
+          bun build --compile --minify --sourcemap dist/bin.js \
+            --target=bun-${{ matrix.target == 'linux' && 'linux-x64' || 'windows-x64' }} \
+            --outfile dist/kujira-cli-${{ matrix.target }}
+          rm dist/bin.js
 
       - name: Fix Linux permissions
-        run: chmod +x kujira-cli-linux
+        if: matrix.target == 'linux'
+        run: chmod +x dist/kujira-cli-linux
 
-      - name: Upload Linux Artifact
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: kujira-cli-linux
-          path: kujira-cli-linux
-
-  build-windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v1
-        with:
-          bun-version: latest
-
-      - name: Install dependencies
-        run: bun install
-
-      - name: Build Windows Executable
-        run: bun build ./source/cli.tsx --compile --minify --sourcemap --target=bun-windows-x64 --outfile kujira-cli-windows.exe
-
-      - name: Upload Windows Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: kujira-cli-windows
-          path: kujira-cli-windows.exe
+          name: kujira-cli-${{ matrix.target }}
+          path: dist/kujira-cli-${{ matrix.target }}
