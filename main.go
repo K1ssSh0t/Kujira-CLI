@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"strings"
 
+	"kujira_cli/extractors"
+
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
 )
@@ -171,12 +173,31 @@ func (c *CLI) playVideo(server Server) error {
 
 	// Aquí irían los extractores específicos
 	if strings.Contains(strings.ToLower(server.Name), "voe") {
-		// videoURL = await getVoeMp4(server.URL)
-		fmt.Println("VOE extractor no implementado en esta versión")
+		extractor := extractors.Voe
+		err := extractor.GetURL(
+			server.URL,
+			extractor.MainURL(),
+			func(sub extractors.SubtitleFile) {},
+			func(link *extractors.ExtractorLink) {
+				if videoURL == "" && strings.Contains(link.Name, "MP4") {
+					videoURL = link.URL
+				}
+			},
+		)
+		if err != nil {
+			return fmt.Errorf("error with Voe extractor: %v", err)
+		}
+		if videoURL == "" {
+			return fmt.Errorf("could not extract Voe link")
+		}
+		// fmt.Println("VOE extractor no implementado en esta versión")
 	}
 	if server.Name == "Stape" {
-		// videoURL = await extractStreamTapeUrl(server.URL)
-		fmt.Println("StreamTape extractor no implementado en esta versión")
+		var err error
+		videoURL, err = extractors.ExtractStreamTapeUrl(server.URL)
+		if err != nil {
+			return fmt.Errorf("error extracting StreamTape URL: %v", err)
+		}
 	}
 
 	cmd := exec.Command("mpv",
