@@ -453,36 +453,37 @@ func (c *CLI) showAnimeInfo(animeURL string) error {
 		return err
 	}
 
-	clearScreen()
-	fmt.Printf("📺 %s\n", info.Title)
-	if info.TitleAlt != info.Title {
-		fmt.Printf("📝 Título alternativo: %s\n", info.TitleAlt)
-	}
-	status := "Desconocido"
-	switch v := info.Status.(type) {
-	case bool:
-		if v {
-			status = "En emisión"
-		} else {
-			status = "Finalizado"
-		}
-	case string:
-		status = v
-	}
-	fmt.Printf("📊 Estado: %s\n", status)
-	fmt.Printf("🎭 Géneros: %s\n", strings.Join(info.Genres, ", "))
-	fmt.Printf("\n📖 Sinopsis:\n%s\n\n", info.Synopsis)
-
-	return c.showEpisodesList(info.Episodes)
+	return c.showEpisodesList(info.Episodes, info)
 }
 
-func (c *CLI) showEpisodesList(episodes []Episode) error {
+func (c *CLI) showEpisodesList(episodes []Episode, animeInfo *AnimeInfo) error {
 	const itemsPerPage = 10
 	currentPage := 0
 	totalPages := (len(episodes) + itemsPerPage - 1) / itemsPerPage
 
 	for {
-		// clearScreen()
+		clearScreen()
+		// Mostrar información del anime en la parte superior
+		fmt.Printf("📺 %s\n", animeInfo.Title)
+		if animeInfo.TitleAlt != animeInfo.Title {
+			fmt.Printf("📝 Título alternativo: %s\n", animeInfo.TitleAlt)
+		}
+		status := "Desconocido"
+		switch v := animeInfo.Status.(type) {
+		case bool:
+			if v {
+				status = "En emisión"
+			} else {
+				status = "Finalizado"
+			}
+		case string:
+			status = v
+		}
+		fmt.Printf("📊 Estado: %s\n", status)
+		fmt.Printf("🎭 Géneros: %s\n", strings.Join(animeInfo.Genres, ", "))
+		fmt.Printf("\n📖 Sinopsis:\n%s\n\n", animeInfo.Synopsis)
+
+		// Mostrar lista de episodios
 		fmt.Printf("📺 Lista de Episodios\n")
 		fmt.Printf("📄 Página %d de %d\n\n", currentPage+1, totalPages)
 
@@ -550,7 +551,6 @@ func (c *CLI) showEpisodesList(episodes []Episode) error {
 		}
 	}
 }
-
 func main() {
 	cli := NewCLI()
 
