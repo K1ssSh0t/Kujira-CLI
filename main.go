@@ -15,7 +15,60 @@ import (
 	"kujira_cli/extractors"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
+)
+
+// --- STYLES ---
+var (
+	appStyle = lipgloss.NewStyle().Padding(1, 2)
+
+	titleStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#874BFD")).
+			Bold(true).
+			Padding(0, 1, 0, 1)
+
+	infoStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("248"))
+
+	// Estilos para las listas
+	listHeaderStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("252")).
+			PaddingBottom(1)
+
+	listDoneStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("40")).
+			SetString("✓")
+
+	listBulletStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("63")).
+			SetString("•")
+
+	listEpisodeStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("214")).
+				Bold(true)
+
+	listAnimeTitleStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("252"))
+
+	listNavStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("33"))
+
+	// Estilos para servidores
+	serverAvailableStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#32CD32"))
+	serverUnavailableStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+
+	errorStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FF0000")).
+			Bold(true)
+
+	boxStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("63")).
+			Padding(1, 2)
+
+	synopsisStyle = lipgloss.NewStyle().
+			Width(80).
+			Padding(1)
 )
 
 type AnimeItem struct {
@@ -112,7 +165,7 @@ func (c *CLI) selectProvider() error {
 	clearScreen()
 	providers := []string{"animeflv", "tioanime"}
 	prompt := &survey.Select{
-		Message: "Selecciona el proveedor de anime:",
+		Message: titleStyle.Render("Selecciona el proveedor de anime:"),
 		Options: providers,
 	}
 	return survey.AskOne(prompt, &c.provider)
@@ -153,11 +206,9 @@ func (c *CLI) getEpisodeDetails(animeURL string) (*EpisodeDetails, error) {
 }
 
 func (c *CLI) getAnimeInfo(animeURL string) (*AnimeInfo, error) {
-	// Convertir URL de episodio a URL de anime
 	animeURL = strings.ReplaceAll(animeURL, "/episode/", "/anime/")
 	animeURL = regexp.MustCompile(`-\d+$`).ReplaceAllString(animeURL, "")
 
-	fmt.Println("Cargando información del anime desde:", animeURL)
 	data, err := c.makeRequest(animeURL)
 	if err != nil {
 		return nil, err
@@ -170,29 +221,20 @@ func (c *CLI) getAnimeInfo(animeURL string) (*AnimeInfo, error) {
 
 func (c *CLI) playVideo(server Server) error {
 	videoURL := server.Source
-
-	// Aquí irían los extractores específicos
 	if strings.Contains(strings.ToLower(server.Name), "voe") {
 		extractor := extractors.Voe
-		err := extractor.GetURL(
-			server.URL,
-			extractor.MainURL(),
-			func(sub extractors.SubtitleFile) {},
-			func(link *extractors.ExtractorLink) {
-				if videoURL == "" && strings.Contains(link.Name, "MP4") {
-					videoURL = link.URL
-				}
-			},
-		)
+		err := extractor.GetURL(server.URL, extractor.MainURL(), func(sub extractors.SubtitleFile) {}, func(link *extractors.ExtractorLink) {
+			if videoURL == "" && strings.Contains(link.Name, "MP4") {
+				videoURL = link.URL
+			}
+		})
 		if err != nil {
 			return fmt.Errorf("error with Voe extractor: %v", err)
 		}
 		if videoURL == "" {
 			return fmt.Errorf("could not extract Voe link")
 		}
-		// fmt.Println("VOE extractor no implementado en esta versión")
-	}
-	if server.Name == "Stape" {
+	} else if server.Name == "Stape" {
 		var err error
 		videoURL, err = extractors.ExtractStreamTapeUrl(server.URL)
 		if err != nil {
@@ -200,57 +242,36 @@ func (c *CLI) playVideo(server Server) error {
 		}
 	}
 
-	cmd := exec.Command("mpv",
-		"--force-window=immediate",
-		fmt.Sprintf("--http-header-fields=Referer: %s", server.URL),
-		videoURL)
-
+	cmd := exec.Command("mpv", "--force-window=immediate", fmt.Sprintf("--http-header-fields=Referer: %s", server.URL), videoURL)
 	return cmd.Start()
 }
 
 func (c *CLI) mainMenu() error {
 	for {
 		clearScreen()
-		fmt.Printf("🎌 Anime CLI - Proveedor: %s\n\n", c.provider)
+		mainTitle := titleStyle.Render("🎌 Kujira CLI")
+		providerText := infoStyle.Render(fmt.Sprintf("Proveedor actual: %s", c.provider))
+		fmt.Println(appStyle.Render(lipgloss.JoinVertical(lipgloss.Center, mainTitle, providerText)))
 
 		var choice string
 		prompt := &survey.Select{
 			Message: "¿Qué deseas hacer?",
-			Options: []string{
-				"Ver últimos animes",
-				"Buscar anime",
-				"Cambiar proveedor",
-				"Salir",
-			},
+			Options: []string{"Ver últimos animes", "Buscar anime", "Cambiar proveedor", "Salir"},
 		}
-
-		err := survey.AskOne(prompt, &choice)
-		if err != nil {
-			return err
-		}
+		survey.AskOne(prompt, &choice)
 
 		switch choice {
 		case "Ver últimos animes":
-			if err := c.showLatestAnime(); err != nil {
-				clearScreen()
-				fmt.Printf("❌ Error: %v\n", err)
-				fmt.Println("Presiona Enter para continuar...")
-				fmt.Scanln()
-			}
+			c.showLatestAnime()
 		case "Buscar anime":
-			if err := c.searchMenu(); err != nil {
-				clearScreen()
-				fmt.Printf("❌ Error: %v\n", err)
-				fmt.Println("Presiona Enter para continuar...")
-				fmt.Scanln()
-			}
+			c.searchMenu()
 		case "Cambiar proveedor":
 			if err := c.selectProvider(); err != nil {
 				return err
 			}
 		case "Salir":
 			clearScreen()
-			fmt.Println("👋 ¡Hasta luego!")
+			fmt.Println(infoStyle.Render("👋 ¡Hasta luego!"))
 			return nil
 		}
 	}
@@ -258,139 +279,120 @@ func (c *CLI) mainMenu() error {
 
 func (c *CLI) showLatestAnime() error {
 	clearScreen()
-	fmt.Printf("📡 Cargando últimos animes de %s...\n", c.provider)
-
+	fmt.Println(infoStyle.Render(fmt.Sprintf("📡 Cargando últimos animes de %s...", c.provider)))
 	animeList, err := c.getLatestAnime()
 	if err != nil {
+		fmt.Println(errorStyle.Render("Error:"), err)
 		return err
 	}
 
 	for {
 		clearScreen()
-		fmt.Printf("📺 Últimos animes de %s\n\n", c.provider)
-
 		options := make([]string, len(animeList)+1)
-		for i, anime := range animeList {
-			options[i] = fmt.Sprintf("%s - Episodio %s", anime.Title, anime.Episode)
+		// Usamos un mapa para poder recuperar el objeto AnimeItem después de la selección
+		optionMap := make(map[string]AnimeItem)
+
+		for _, anime := range animeList {
+			optionKey := fmt.Sprintf("%s %s - %s",
+				listBulletStyle.String(),
+				listEpisodeStyle.Render("Episodio "+anime.Episode),
+				listAnimeTitleStyle.Render(anime.Title),
+			)
+			options[len(optionMap)] = optionKey
+			optionMap[optionKey] = anime
 		}
-		options[len(animeList)] = "← Volver al menú principal"
+		options[len(animeList)] = listNavStyle.Render("← Volver al menú principal")
 
 		var choice string
 		prompt := &survey.Select{
-			Message:  "Selecciona un anime:",
+			Message:  titleStyle.Render("Últimos Animes"),
 			Options:  options,
 			PageSize: 15,
 		}
+		survey.AskOne(prompt, &choice)
 
-		err := survey.AskOne(prompt, &choice)
-		if err != nil {
-			return err
-		}
-
-		if strings.Contains(choice, "← Volver") {
+		if strings.Contains(choice, "Volver") {
 			return nil
 		}
 
-		// Encontrar el anime seleccionado
-		for _, anime := range animeList {
-			expected := fmt.Sprintf("%s - Episodio %s", anime.Title, anime.Episode)
-			if choice == expected {
-				if err := c.showEpisodeDetails(anime); err != nil {
-					clearScreen()
-					fmt.Printf("❌ Error: %v\n", err)
-					fmt.Println("Presiona Enter para continuar...")
-					fmt.Scanln()
-				}
-				break
-			}
+		if selectedAnime, ok := optionMap[choice]; ok {
+			c.showEpisodeDetails(selectedAnime)
 		}
 	}
 }
 
 func (c *CLI) searchMenu() error {
 	clearScreen()
-	fmt.Println("🔍 Búsqueda de Anime")
-
 	var query string
 	prompt := &survey.Input{
-		Message: "Ingresa el nombre del anime a buscar:",
+		Message: titleStyle.Render("🔍 Ingresa el nombre del anime a buscar:"),
 	}
-
-	err := survey.AskOne(prompt, &query)
-	if err != nil {
-		return err
-	}
+	survey.AskOne(prompt, &query)
 
 	clearScreen()
-	fmt.Printf("🔄 Buscando '%s'...\n", query)
-
+	fmt.Println(infoStyle.Render(fmt.Sprintf("🔄 Buscando '%s'...", query)))
 	results, err := c.searchAnime(query)
 	if err != nil {
+		fmt.Println(errorStyle.Render("Error:"), err)
 		return err
 	}
 
 	if len(results) == 0 {
 		clearScreen()
-		fmt.Println("❌ No se encontraron resultados")
-		fmt.Println("Presiona Enter para continuar...")
+		fmt.Println(boxStyle.Render(errorStyle.Render("No se encontraron resultados para '") + query + errorStyle.Render("'")))
+		fmt.Println(infoStyle.Render("Presiona Enter para continuar..."))
 		fmt.Scanln()
 		return nil
 	}
 
 	clearScreen()
-	fmt.Printf("🎯 Resultados para '%s'\n\n", query)
-
 	options := make([]string, len(results)+1)
-	for i, result := range results {
-		options[i] = fmt.Sprintf("%s (%s)", result.Name, result.Type)
+	optionMap := make(map[string]SearchResult)
+
+	for _, result := range results {
+		optionKey := fmt.Sprintf("%s %s %s",
+			listBulletStyle.String(),
+			listAnimeTitleStyle.Render(result.Name),
+			infoStyle.Render("("+result.Type+")"),
+		)
+		options[len(optionMap)] = optionKey
+		optionMap[optionKey] = result
 	}
-	options[len(results)] = "← Volver"
+	options[len(results)] = listNavStyle.Render("← Volver")
 
 	var choice string
 	selectPrompt := &survey.Select{
-		Message:  "Selecciona un anime:",
+		Message:  titleStyle.Render(fmt.Sprintf("Resultados para '%s'", query)),
 		Options:  options,
 		PageSize: 15,
 	}
+	survey.AskOne(selectPrompt, &choice)
 
-	err = survey.AskOne(selectPrompt, &choice)
-	if err != nil {
-		return err
-	}
-
-	if strings.Contains(choice, "← Volver") {
+	if strings.Contains(choice, "Volver") {
 		return nil
 	}
 
-	// Encontrar resultado seleccionado
-	for _, result := range results {
-		expected := fmt.Sprintf("%s (%s)", result.Name, result.Type)
-		if choice == expected {
-			return c.showAnimeInfo(result.URL)
-		}
+	if selectedResult, ok := optionMap[choice]; ok {
+		return c.showAnimeInfo(selectedResult.URL)
 	}
-
 	return nil
 }
 
 func (c *CLI) showEpisodeDetails(anime AnimeItem) error {
 	clearScreen()
-	fmt.Printf("📡 Cargando servidores para: %s\n", anime.Title)
-
+	fmt.Println(infoStyle.Render(fmt.Sprintf("📡 Cargando servidores para: %s", anime.Title)))
 	details, err := c.getEpisodeDetails(anime.URL)
 	if err != nil {
+		fmt.Println(errorStyle.Render("Error:"), err)
 		return err
 	}
 
 	for {
 		clearScreen()
-		fmt.Printf("🎬 %s\n", details.Title)
-		fmt.Printf("📺 Episodio: %s\n\n", details.NumberEpisode)
-
-		allowedServers := []string{"stape", "streamtape", "voe", "yourupload"}
 		var serverOptions []string
 		var validServers []Server
 
+		allowedServers := []string{"stape", "streamtape", "voe", "yourupload"}
 		for _, server := range details.Servers {
 			isAllowed := false
 			for _, allowed := range allowedServers {
@@ -399,66 +401,53 @@ func (c *CLI) showEpisodeDetails(anime AnimeItem) error {
 					break
 				}
 			}
-
 			if isAllowed {
-				serverOptions = append(serverOptions, fmt.Sprintf("▶️  %s", server.Name))
+				serverOptions = append(serverOptions, serverAvailableStyle.Render(fmt.Sprintf("▶️  %s", server.Name)))
 				validServers = append(validServers, server)
 			} else {
-				serverOptions = append(serverOptions, fmt.Sprintf("❌ %s (No disponible)", server.Name))
+				serverOptions = append(serverOptions, serverUnavailableStyle.Render(fmt.Sprintf("❌ %s (No disponible)", server.Name)))
 			}
 		}
 
-		serverOptions = append(serverOptions, "ℹ️  Ver información del anime")
-		serverOptions = append(serverOptions, "← Volver")
+		serverOptions = append(serverOptions, listNavStyle.Render("ℹ️  Ver información del anime"), listNavStyle.Render("← Volver"))
 
 		var choice string
 		prompt := &survey.Select{
-			Message: "Selecciona un servidor:",
-			Options: serverOptions,
+			Message:  titleStyle.Render(fmt.Sprintf("%s - %s", details.Title, details.NumberEpisode)),
+			Help:     "Selecciona un servidor para reproducir",
+			Options:  serverOptions,
+			PageSize: 10,
 		}
+		survey.AskOne(prompt, &choice)
 
-		err := survey.AskOne(prompt, &choice)
-		if err != nil {
-			return err
-		}
-
-		if strings.Contains(choice, "← Volver") {
+		switch choice {
+		case listNavStyle.Render("← Volver"):
 			return nil
-		}
-
-		if strings.Contains(choice, "Ver información del anime") {
-			if err := c.showAnimeInfo(anime.URL); err != nil {
-				clearScreen()
-				fmt.Printf("❌ Error: %v\n", err)
-				fmt.Println("Presiona Enter para continuar...")
-				fmt.Scanln()
-			}
+		case listNavStyle.Render("ℹ️  Ver información del anime"):
+			c.showAnimeInfo(anime.URL)
 			continue
 		}
 
-		if strings.HasPrefix(choice, "❌") {
+		if strings.Contains(choice, "(No disponible)") {
 			clearScreen()
-			fmt.Println("⚠️  Servidor no disponible")
-			fmt.Println("Presiona Enter para continuar...")
+			fmt.Println(boxStyle.Render(errorStyle.Render("Servidor no disponible. Por favor, elige otro.")))
+			fmt.Println(infoStyle.Render("Presiona Enter para continuar..."))
 			fmt.Scanln()
 			continue
 		}
 
-		// Encontrar el servidor seleccionado
 		for _, server := range validServers {
-			expected := fmt.Sprintf("▶️  %s", server.Name)
+			expected := serverAvailableStyle.Render(fmt.Sprintf("▶️  %s", server.Name))
 			if choice == expected {
 				clearScreen()
-				fmt.Printf("🚀 Reproduciendo en %s...\n", server.Name)
+				fmt.Println(infoStyle.Render(fmt.Sprintf("🚀 Reproduciendo en %s...", server.Name)))
 				if err := c.playVideo(server); err != nil {
-					fmt.Printf("❌ Error al reproducir: %v\n", err)
-					fmt.Println("Presiona Enter para continuar...")
-					fmt.Scanln()
+					fmt.Println(errorStyle.Render("Error al reproducir:"), err)
 				} else {
-					fmt.Println("✅ Video iniciado correctamente")
-					fmt.Println("Presiona Enter para continuar...")
-					fmt.Scanln()
+					fmt.Println(infoStyle.Render("✅ Video iniciado correctamente."))
 				}
+				fmt.Println(infoStyle.Render("Presiona Enter para continuar..."))
+				fmt.Scanln()
 				break
 			}
 		}
@@ -467,10 +456,10 @@ func (c *CLI) showEpisodeDetails(anime AnimeItem) error {
 
 func (c *CLI) showAnimeInfo(animeURL string) error {
 	clearScreen()
-	fmt.Println("📡 Cargando información del anime...")
-
+	fmt.Println(infoStyle.Render("📡 Cargando información del anime..."))
 	info, err := c.getAnimeInfo(animeURL)
 	if err != nil {
+		fmt.Println(errorStyle.Render("Error:"), err)
 		return err
 	}
 
@@ -484,11 +473,7 @@ func (c *CLI) showEpisodesList(episodes []Episode, animeInfo *AnimeInfo) error {
 
 	for {
 		clearScreen()
-		// Mostrar información del anime en la parte superior
-		fmt.Printf("📺 %s\n", animeInfo.Title)
-		if animeInfo.TitleAlt != animeInfo.Title {
-			fmt.Printf("📝 Título alternativo: %s\n", animeInfo.TitleAlt)
-		}
+
 		status := "Desconocido"
 		switch v := animeInfo.Status.(type) {
 		case bool:
@@ -500,13 +485,16 @@ func (c *CLI) showEpisodesList(episodes []Episode, animeInfo *AnimeInfo) error {
 		case string:
 			status = v
 		}
-		fmt.Printf("📊 Estado: %s\n", status)
-		fmt.Printf("🎭 Géneros: %s\n", strings.Join(animeInfo.Genres, ", "))
-		fmt.Printf("\n📖 Sinopsis:\n%s\n\n", animeInfo.Synopsis)
 
-		// Mostrar lista de episodios
-		fmt.Printf("📺 Lista de Episodios\n")
-		fmt.Printf("📄 Página %d de %d\n\n", currentPage+1, totalPages)
+		infoBlock := lipgloss.JoinVertical(
+			lipgloss.Left,
+			titleStyle.Render(animeInfo.Title),
+			infoStyle.Render("Estado: "+status),
+			infoStyle.Render("Géneros: "+strings.Join(animeInfo.Genres, ", ")),
+			synopsisStyle.Render(animeInfo.Synopsis),
+		)
+
+		fmt.Println(boxStyle.Render(infoBlock))
 
 		start := currentPage * itemsPerPage
 		end := start + itemsPerPage
@@ -515,84 +503,69 @@ func (c *CLI) showEpisodesList(episodes []Episode, animeInfo *AnimeInfo) error {
 		}
 
 		currentEpisodes := episodes[start:end]
-		options := make([]string, len(currentEpisodes))
+		options := make([]string, 0, itemsPerPage+3)
+		optionMap := make(map[string]Episode)
 
-		for i, ep := range currentEpisodes {
-			options[i] = fmt.Sprintf("📺 Episodio %d: %s", ep.Num, ep.Name)
+		for _, ep := range currentEpisodes {
+			optionKey := fmt.Sprintf("%s %s: %s",
+				listBulletStyle.String(),
+				listEpisodeStyle.Render(fmt.Sprintf("Episodio %d", ep.Num)),
+				listAnimeTitleStyle.Render(ep.Name),
+			)
+			options = append(options, optionKey)
+			optionMap[optionKey] = ep
 		}
 
-		// Agregar opciones de navegación
+		navOptions := []string{}
 		if currentPage > 0 {
-			options = append(options, "⬅️  Página anterior")
+			navOptions = append(navOptions, listNavStyle.Render("⬅️  Página anterior"))
 		}
 		if end < len(episodes) {
-			options = append(options, "➡️  Página siguiente")
+			navOptions = append(navOptions, listNavStyle.Render("➡️  Página siguiente"))
 		}
-		options = append(options, "← Volver")
+		navOptions = append(navOptions, listNavStyle.Render("← Volver"))
+		options = append(options, navOptions...)
 
 		var choice string
 		prompt := &survey.Select{
-			Message:  "Selecciona un episodio:",
+			Message:  fmt.Sprintf("Selecciona un episodio (Página %d de %d)", currentPage+1, totalPages),
 			Options:  options,
-			PageSize: 15,
+			PageSize: itemsPerPage + len(navOptions),
 		}
+		survey.AskOne(prompt, &choice)
 
-		err := survey.AskOne(prompt, &choice)
-		if err != nil {
-			return err
-		}
-
-		if choice == "← Volver" {
+		switch choice {
+		case listNavStyle.Render("← Volver"):
 			return nil
-		}
-
-		if choice == "⬅️  Página anterior" {
-			currentPage--
-			continue
-		}
-
-		if choice == "➡️  Página siguiente" {
-			currentPage++
-			continue
-		}
-
-		// Encontrar episodio seleccionado
-		for _, ep := range currentEpisodes {
-			expected := fmt.Sprintf("📺 Episodio %d: %s", ep.Num, ep.Name)
-			if choice == expected {
-				animeItem := AnimeItem{URL: ep.URL, Title: ep.Name}
-				if err := c.showEpisodeDetails(animeItem); err != nil {
-					clearScreen()
-					fmt.Printf("❌ Error: %v\n", err)
-					fmt.Println("Presiona Enter para continuar...")
-					fmt.Scanln()
-				}
-				break
+		case listNavStyle.Render("⬅️  Página anterior"):
+			if currentPage > 0 {
+				currentPage--
 			}
+			continue
+		case listNavStyle.Render("➡️  Página siguiente"):
+			if end < len(episodes) {
+				currentPage++
+			}
+			continue
+		}
+
+		if selectedEpisode, ok := optionMap[choice]; ok {
+			animeItem := AnimeItem{URL: selectedEpisode.URL, Title: selectedEpisode.Name}
+			c.showEpisodeDetails(animeItem)
 		}
 	}
 }
+
 func main() {
 	cli := NewCLI()
-
 	var rootCmd = &cobra.Command{
-		Use:   "anime-cli",
+		Use:   "kujira-cli",
 		Short: "CLI interactivo para ver anime",
-		Long:  "Un cliente de línea de comandos para navegar y reproducir anime desde diferentes proveedores",
+		Long:  "Un cliente de línea de comandos para navegar y reproducir anime desde diferentes proveedores.",
 		Run: func(cmd *cobra.Command, args []string) {
-			clearScreen()
-			fmt.Println("🎌 Bienvenido al CLI de Anime")
-			fmt.Println()
-
 			if err := cli.selectProvider(); err != nil {
 				log.Fatal(err)
 			}
-
-			clearScreen()
-			fmt.Printf("✅ Proveedor seleccionado: %s\n", cli.provider)
-			// fmt.Println("Presiona Enter para continuar...")
-			// fmt.Scanln()
-
 			if err := cli.mainMenu(); err != nil {
 				log.Fatal(err)
 			}
@@ -604,35 +577,13 @@ func main() {
 		Short: "Buscar anime directamente",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			clearScreen()
-			query := args[0]
-			provider, _ := cmd.Flags().GetString("provider")
-
-			if provider == "" {
+			cli.provider, _ = cmd.Flags().GetString("provider")
+			if cli.provider == "" {
 				if err := cli.selectProvider(); err != nil {
 					log.Fatal(err)
 				}
-			} else {
-				cli.provider = provider
 			}
-
-			clearScreen()
-			fmt.Printf("🔍 Buscando '%s' en %s...\n\n", query, cli.provider)
-
-			results, err := cli.searchAnime(query)
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			if len(results) == 0 {
-				fmt.Println("❌ No se encontraron resultados")
-				return
-			}
-
-			fmt.Printf("🎯 Resultados encontrados:\n\n")
-			for i, result := range results {
-				fmt.Printf("%d. %s (%s)\n", i+1, result.Name, result.Type)
-			}
+			cli.searchMenu()
 		},
 	}
 
