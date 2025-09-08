@@ -206,9 +206,10 @@ func (c *CLI) getEpisodeDetails(animeURL string) (*EpisodeDetails, error) {
 }
 
 func (c *CLI) getAnimeInfo(animeURL string) (*AnimeInfo, error) {
-	animeURL = strings.ReplaceAll(animeURL, "/episode/", "/anime/")
-	animeURL = regexp.MustCompile(`-\d+$`).ReplaceAllString(animeURL, "")
-
+	if strings.Contains(animeURL, "/episode/") {
+		animeURL = strings.ReplaceAll(animeURL, "/episode/", "/anime/")
+		animeURL = regexp.MustCompile(`-\d+$`).ReplaceAllString(animeURL, "")
+	}
 	data, err := c.makeRequest(animeURL)
 	if err != nil {
 		return nil, err
