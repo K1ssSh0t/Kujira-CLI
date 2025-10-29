@@ -163,7 +163,7 @@ func (c *CLI) makeRequest(endpoint string) ([]byte, error) {
 
 func (c *CLI) selectProvider() error {
 	clearScreen()
-	providers := []string{"animeflv", "tioanime"}
+	providers := []string{"animeflv", "tioanime","animeav1","monoschinos"}
 	prompt := &survey.Select{
 		Message: titleStyle.Render("Selecciona el proveedor de anime:"),
 		Options: providers,
@@ -225,7 +225,7 @@ func (c *CLI) playVideo(server Server) error {
 	if strings.Contains(strings.ToLower(server.Name), "voe") {
 		extractor := extractors.Voe
 		err := extractor.GetURL(server.URL, extractor.MainURL(), func(sub extractors.SubtitleFile) {}, func(link *extractors.ExtractorLink) {
-			if videoURL == "" && strings.Contains(link.Name, "MP4") {
+			if (videoURL == "" || videoURL == "unknown") && strings.Contains(link.Name, "MP4") {
 				videoURL = link.URL
 			}
 		})
@@ -235,7 +235,7 @@ func (c *CLI) playVideo(server Server) error {
 		if videoURL == "" {
 			return fmt.Errorf("could not extract Voe link")
 		}
-	} else if server.Name == "Stape" {
+	} else if server.Name == "Stape" || server.Name == "StreamTape" {
 		var err error
 		videoURL, err = extractors.ExtractStreamTapeUrl(server.URL)
 		if err != nil {
@@ -588,7 +588,7 @@ func main() {
 		},
 	}
 
-	searchCmd.Flags().StringP("provider", "p", "", "Proveedor de anime (animeflv, tioanime)")
+	searchCmd.Flags().StringP("provider", "p", "", "Proveedor de anime (animeflv, tioanime, animeav1, monoschinos)")
 	rootCmd.AddCommand(searchCmd)
 
 	if err := rootCmd.Execute(); err != nil {
