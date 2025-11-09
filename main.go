@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,8 +11,11 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
+	"time"
 
 	"kujira_cli/extractors"
 
@@ -71,6 +76,8 @@ var (
 			Padding(1)
 )
 
+// --- DATA STRUCTURES ---
+
 type AnimeItem struct {
 	Title   string `json:"title"`
 	URL     string `json:"url"`
@@ -121,6 +128,14 @@ type SearchResult struct {
 	Type  string `json:"type"`
 }
 
+type HistoryItem struct {
+	Title     string    `json:"title"`
+	Episode   string    `json:"episode"`
+	URL       string    `json:"url"`
+	Provider  string    `json:"provider"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
 type CLI struct {
 	baseURL  string
 	client   *http.Client
@@ -143,7 +158,161 @@ func clearScreen() {
 	cmd.Run()
 }
 
+// --- CACHING ---
+
+const cacheDuration = time.Hour * 1 // Cache for 1 hour
+
+type CacheEntry struct {
+	Timestamp time.Time
+	Data      []byte
+}
+
+func getCacheDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".kujira_cli", "cache"), nil
+}
+
+func ensureCacheDir() error {
+	cacheDir, err := getCacheDir()
+	if err != nil {
+		return err
+	}
+	return os.MkdirAll(cacheDir, 0755)
+}
+
+func getCacheKey(s string) string {
+	h := sha1.New()
+	h.Write([]byte(s))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func (c *CLI) readCache(key string) ([]byte, bool) {
+	cacheDir, err := getCacheDir()
+	if err != nil {
+		return nil, false
+	}
+	filePath := filepath.Join(cacheDir, key)
+
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, false
+	}
+
+	var entry CacheEntry
+	if err := json.Unmarshal(data, &entry); err != nil {
+		return nil, false
+	}
+
+	if time.Since(entry.Timestamp) > cacheDuration {
+		return nil, false
+	}
+
+	return entry.Data, true
+}
+
+func (c *CLI) writeCache(key string, data []byte) error {
+	cacheDir, err := getCacheDir()
+	if err != nil {
+		return err
+	}
+	filePath := filepath.Join(cacheDir, key)
+
+	entry := CacheEntry{
+		Timestamp: time.Now(),
+		Data:      data,
+	}
+
+	jsonData, err := json.Marshal(entry)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(filePath, jsonData, 0644)
+}
+
+// --- HISTORY ---
+
+func getHistoryPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	configDir := filepath.Join(home, ".kujira_cli")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return "", err
+	}
+	return filepath.Join(configDir, "history.json"), nil
+}
+
+func (c *CLI) readHistory() ([]HistoryItem, error) {
+	path, err := getHistoryPath()
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []HistoryItem{}, nil // Return empty slice if file doesn't exist
+		}
+		return nil, err
+	}
+
+	var history []HistoryItem
+	if err := json.Unmarshal(data, &history); err != nil {
+		return nil, err
+	}
+	return history, nil
+}
+
+func (c *CLI) addToHistory(item HistoryItem) error {
+	history, err := c.readHistory()
+	if err != nil {
+		return err
+	}
+
+	// Remove duplicates, keeping the latest one
+	newHistory := []HistoryItem{item}
+	for _, h := range history {
+		if h.URL != item.URL {
+			newHistory = append(newHistory, h)
+		}
+	}
+
+	// Optional: limit history size
+	if len(newHistory) > 100 {
+		newHistory = newHistory[:100]
+	}
+
+	// Sort by timestamp descending
+	sort.Slice(newHistory, func(i, j int) bool {
+		return newHistory[i].Timestamp.After(newHistory[j].Timestamp)
+	})
+
+	data, err := json.MarshalIndent(newHistory, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	path, err := getHistoryPath()
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, data, 0644)
+}
+
+// --- API CALLS ---
+
 func (c *CLI) makeRequest(endpoint string) ([]byte, error) {
+	cacheKey := getCacheKey(c.provider + ":" + endpoint)
+	if data, found := c.readCache(cacheKey); found {
+		return data, nil
+	}
+
 	req, err := http.NewRequest("GET", c.baseURL+endpoint, nil)
 	if err != nil {
 		return nil, err
@@ -158,12 +327,22 @@ func (c *CLI) makeRequest(endpoint string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
-	return io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	// Do not cache empty or error responses
+	if resp.StatusCode == http.StatusOK && len(body) > 2 { // len > 2 to avoid caching "{}" or "[]"
+		c.writeCache(cacheKey, body)
+	}
+
+	return body, nil
 }
 
 func (c *CLI) selectProvider() error {
 	clearScreen()
-	providers := []string{"animeflv", "tioanime","animeav1","monoschinos"}
+	providers := []string{"animeflv", "tioanime", "animev1", "monoschinos"}
 	prompt := &survey.Select{
 		Message: titleStyle.Render("Selecciona el proveedor de anime:"),
 		Options: providers,
@@ -220,7 +399,9 @@ func (c *CLI) getAnimeInfo(animeURL string) (*AnimeInfo, error) {
 	return &info, err
 }
 
-func (c *CLI) playVideo(server Server) error {
+// --- VIDEO PLAYER ---
+
+func (c *CLI) playVideo(server Server, details *EpisodeDetails, animeURL string) error {
 	videoURL := server.Source
 	if strings.Contains(strings.ToLower(server.Name), "voe") {
 		extractor := extractors.Voe
@@ -244,8 +425,23 @@ func (c *CLI) playVideo(server Server) error {
 	}
 
 	cmd := exec.Command("mpv", "--force-window=immediate", fmt.Sprintf("--http-header-fields=Referer: %s", server.URL), videoURL)
-	return cmd.Start()
+	err := cmd.Start()
+	if err == nil {
+		historyItem := HistoryItem{
+			Title:     details.Title,
+			Episode:   details.NumberEpisode,
+			URL:       animeURL,
+			Provider:  c.provider,
+			Timestamp: time.Now(),
+		}
+		if historyErr := c.addToHistory(historyItem); historyErr != nil {
+			fmt.Println(errorStyle.Render("Advertencia: No se pudo guardar en el historial:"), historyErr)
+		}
+	}
+	return err
 }
+
+// --- UI MENUS ---
 
 func (c *CLI) mainMenu() error {
 	for {
@@ -257,7 +453,7 @@ func (c *CLI) mainMenu() error {
 		var choice string
 		prompt := &survey.Select{
 			Message: "¿Qué deseas hacer?",
-			Options: []string{"Ver últimos animes", "Buscar anime", "Cambiar proveedor", "Salir"},
+			Options: []string{"Ver últimos animes", "Buscar anime", "Historial", "Cambiar proveedor", "Salir"},
 		}
 		survey.AskOne(prompt, &choice)
 
@@ -266,6 +462,8 @@ func (c *CLI) mainMenu() error {
 			c.showLatestAnime()
 		case "Buscar anime":
 			c.searchMenu()
+		case "Historial":
+			c.showHistoryMenu()
 		case "Cambiar proveedor":
 			if err := c.selectProvider(); err != nil {
 				return err
@@ -290,7 +488,6 @@ func (c *CLI) showLatestAnime() error {
 	for {
 		clearScreen()
 		options := make([]string, len(animeList)+1)
-		// Usamos un mapa para poder recuperar el objeto AnimeItem después de la selección
 		optionMap := make(map[string]AnimeItem)
 
 		for _, anime := range animeList {
@@ -442,7 +639,7 @@ func (c *CLI) showEpisodeDetails(anime AnimeItem) error {
 			if choice == expected {
 				clearScreen()
 				fmt.Println(infoStyle.Render(fmt.Sprintf("🚀 Reproduciendo en %s...", server.Name)))
-				if err := c.playVideo(server); err != nil {
+				if err := c.playVideo(server, details, anime.URL); err != nil {
 					fmt.Println(errorStyle.Render("Error al reproducir:"), err)
 				} else {
 					fmt.Println(infoStyle.Render("✅ Video iniciado correctamente."))
@@ -557,6 +754,69 @@ func (c *CLI) showEpisodesList(episodes []Episode, animeInfo *AnimeInfo) error {
 	}
 }
 
+func (c *CLI) showHistoryMenu() error {
+	clearScreen()
+	fmt.Println(infoStyle.Render("📡 Cargando historial..."))
+	history, err := c.readHistory()
+	if err != nil {
+		fmt.Println(errorStyle.Render("Error al leer el historial:"), err)
+		return err
+	}
+
+	if len(history) == 0 {
+		clearScreen()
+		fmt.Println(boxStyle.Render(infoStyle.Render("El historial está vacío.")))
+		fmt.Println(infoStyle.Render("Presiona Enter para continuar..."))
+		fmt.Scanln()
+		return nil
+	}
+
+	for {
+		clearScreen()
+		options := make([]string, len(history)+1)
+		optionMap := make(map[string]HistoryItem)
+
+		for i, item := range history {
+			optionKey := fmt.Sprintf("%s %s - %s (%s) - %s",
+				listBulletStyle.String(),
+				listEpisodeStyle.Render(item.Episode),
+				listAnimeTitleStyle.Render(item.Title),
+				infoStyle.Render(item.Provider),
+				infoStyle.Render(item.Timestamp.Format("2006-01-02 15:04")),
+			)
+			options[i] = optionKey
+			optionMap[optionKey] = item
+		}
+		options[len(history)] = listNavStyle.Render("← Volver al menú principal")
+
+		var choice string
+		prompt := &survey.Select{
+			Message:  titleStyle.Render("Historial de Episodios"),
+			Options:  options,
+			PageSize: 15,
+		}
+		survey.AskOne(prompt, &choice)
+
+		if strings.Contains(choice, "Volver") {
+			return nil
+		}
+
+		if selectedItem, ok := optionMap[choice]; ok {
+			if c.provider != selectedItem.Provider {
+				fmt.Println(infoStyle.Render(fmt.Sprintf("Cambiando al proveedor: %s", selectedItem.Provider)))
+				c.provider = selectedItem.Provider
+			}
+
+			animeItem := AnimeItem{
+				Title:   selectedItem.Title,
+				URL:     selectedItem.URL,
+				Episode: selectedItem.Episode,
+			}
+			c.showEpisodeDetails(animeItem)
+		}
+	}
+}
+
 func main() {
 	cli := NewCLI()
 	var rootCmd = &cobra.Command{
@@ -564,6 +824,9 @@ func main() {
 		Short: "CLI interactivo para ver anime",
 		Long:  "Un cliente de línea de comandos para navegar y reproducir anime desde diferentes proveedores.",
 		Run: func(cmd *cobra.Command, args []string) {
+			if err := ensureCacheDir(); err != nil {
+				log.Fatalf("Failed to create cache directory: %v", err)
+			}
 			if err := cli.selectProvider(); err != nil {
 				log.Fatal(err)
 			}
@@ -578,12 +841,17 @@ func main() {
 		Short: "Buscar anime directamente",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
+			if err := ensureCacheDir(); err != nil {
+				log.Fatalf("Failed to create cache directory: %v", err)
+			}
 			cli.provider, _ = cmd.Flags().GetString("provider")
 			if cli.provider == "" {
 				if err := cli.selectProvider(); err != nil {
 					log.Fatal(err)
 				}
 			}
+			// This is a bit of a hack. We need to get the query from args.
+			// The searchMenu function asks for it again. Let's refactor this later.
 			cli.searchMenu()
 		},
 	}
