@@ -1,50 +1,63 @@
-name: Go Build
+name: Build and Release
 
 on:
-  workflow_dispatch:
+  push:
+    tags:
+      - "v*" # Se activa con tags que empiecen con 'v' (ej: v1.0.0)
+  workflow_dispatch: # Permite ejecutarlo manualmente
 
 jobs:
-  build-linux:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.24.x'
-        cache: true
-        
-    - name: Build
-      # SOLUCIÓN: Compila solo el paquete main, no todos los paquetes
-      run: go build -v -o kujira-cli_linux .
-    
-    - name: Fix Linux permissions
-      run: chmod +x kujira-cli_linux
-      
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: kujira-cli-linux
-        path: kujira-cli_linux
+  build:
+    name: Build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
 
-  build-windows:
-    runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.24.x'
-        cache: true
-      
-    - name: Build
-      # Misma solución para Windows
-      run: go build -v -o kujira-cli_windows.exe .
-    
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: kujira-cli-windows
-        path: kujira-cli_windows.exe
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.24.x" # Usa la versión de Go que necesites
+          cache: true
+
+      - name: Install dependencies
+        if: runner.os == 'Windows' # Solo instala rsrc en Windows
+        run: go install github.com/akavel/rsrc@latest
+
+      - name: Install ImageMagick (for icon conversion)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update && sudo apt-get install -y imagemagick
+
+      - name: Build
+        run: |
+          mkdir -p assets
+          make prepare-dist
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            make dist/windows/kujira-cli.exe
+          elif [ "${{ runner.os }}" = "Linux" ]; then
+            make dist/linux/kujira-cli
+          fi
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kujira-cli-${{ runner.os }}
+          path: |
+            dist/linux/kujira-cli
+            dist/windows/kujira-cli.exe
+          if-no-files-found: error
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            dist/linux/kujira-cli
+            dist/windows/kujira-cli.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

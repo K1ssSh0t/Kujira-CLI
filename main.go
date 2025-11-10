@@ -24,6 +24,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Variables de versión que se pueden establecer en tiempo de compilación
+var (
+	// Versión de la aplicación
+	version = "dev"
+	// Fecha de compilación
+	buildDate = "fecha-no-especificada"
+	// Commit de Git
+	gitCommit = "sin-commit"
+)
+
 // --- STYLES ---
 var (
 	appStyle = lipgloss.NewStyle().Padding(1, 2)
@@ -820,12 +830,13 @@ func (c *CLI) showHistoryMenu() error {
 func main() {
 	cli := NewCLI()
 	var rootCmd = &cobra.Command{
-		Use:   "kujira-cli",
-		Short: "CLI interactivo para ver anime",
-		Long:  "Un cliente de línea de comandos para navegar y reproducir anime desde diferentes proveedores.",
+		Use:     "kujira-cli",
+		Short:   "CLI interactivo para ver anime",
+		Long:    "Un cliente de línea de comandos para navegar y reproducir anime desde diferentes proveedores.\n\nCompilado el " + buildDate + " (commit: " + gitCommit + ")",
+		Version: version,
 		Run: func(cmd *cobra.Command, args []string) {
 			if err := ensureCacheDir(); err != nil {
-				log.Fatalf("Failed to create cache directory: %v", err)
+				log.Fatalf("Error al crear el directorio de caché: %v", err)
 			}
 			if err := cli.selectProvider(); err != nil {
 				log.Fatal(err)
@@ -835,6 +846,16 @@ func main() {
 			}
 		},
 	}
+
+	// Configurar la plantilla de versión
+	rootCmd.SetVersionTemplate(`{{printf "%s: %s - versión %s\n" .Name .Short .Version}}
+Compilado el: {{.Version}}
+Compilación: {{.Name}}-{{.Version}}
+`)
+
+	// Agregar flags globales
+	rootCmd.PersistentFlags().StringP("provider", "p", "", "Proveedor de anime a usar")
+	rootCmd.Flags().BoolP("version", "v", false, "Mostrar información de versión")
 
 	var searchCmd = &cobra.Command{
 		Use:   "search [query]",
