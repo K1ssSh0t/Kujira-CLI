@@ -9,10 +9,7 @@ on:
 jobs:
   build:
     name: Build
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest]
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
@@ -21,36 +18,33 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: "1.24.x" # Usa la versión de Go que necesites
+          go-version: "1.24.x"
           cache: true
 
       - name: Install dependencies
-        if: runner.os == 'Windows' # Solo instala rsrc en Windows
-        run: go install github.com/akavel/rsrc@latest
+        run: |
+          # Instalar rsrc para Windows
+          go install github.com/akavel/rsrc@latest
+          # Instalar dependencias para la compilación cruzada
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64 gcc-multilib
 
-      - name: Install ImageMagick (for icon conversion)
-        if: runner.os == 'Linux'
+      - name: Install ImageMagick
         run: |
           sudo apt-get update && sudo apt-get install -y imagemagick
 
-      - name: Build
-        shell: bash
+      - name: Build all targets
         run: |
-          mkdir -p assets
-          make prepare-dist
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            make dist/windows/kujira-cli.exe
-          elif [ "${{ runner.os }}" = "Linux" ]; then
-            make dist/linux/kujira-cli
-          fi
+          make build-all
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: kujira-cli-${{ runner.os }}
+          name: kujira-cli-binaries
           path: |
             dist/linux/kujira-cli
             dist/windows/kujira-cli.exe
+            dist/macos/kujira-cli
           if-no-files-found: error
 
       - name: Create Release
@@ -60,5 +54,6 @@ jobs:
           files: |
             dist/linux/kujira-cli
             dist/windows/kujira-cli.exe
+            dist/macos/kujira-cli
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
