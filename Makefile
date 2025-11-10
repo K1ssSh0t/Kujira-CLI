@@ -9,39 +9,39 @@ GIT_COMMIT = $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
 dist/linux/kujira-cli:
 	GOOS=linux GOARCH=amd64 go build $(VERSION_FLAGS) -o $@
 
-# Build para Windows con icono
+# Build para Windows con icono y versión
 ICON_SRC=assets/icon.ico
-RSRC_BIN=$(shell go env GOPATH)/bin/rsrc
+GOVERSIONINFO_BIN=$(shell go env GOPATH)/bin/goversioninfo
 
 # Información de versión para los ejecutables
 VERSION_FLAGS=-ldflags "-X 'main.version=$(VERSION)' -X 'main.buildDate=$(BUILD_DATE)' -X 'main.gitCommit=$(GIT_COMMIT)'"
-WINDOWS_FLAGS=-ldflags "-H=windowsgui -X 'main.version=$(VERSION)' -X 'main.buildDate=$(BUILD_DATE)' -X 'main.gitCommit=$(GIT_COMMIT)'"
+WINDOWS_FLAGS=-ldflags "-X 'main.version=$(VERSION)' -X 'main.buildDate=$(BUILD_DATE)' -X 'main.gitCommit=$(GIT_COMMIT)'"
 
-dist/windows/kujira-cli.exe: assets/kujira-cli.manifest $(ICON_SRC)
-	@echo "Compilando para Windows con icono..."
-	# Primero compilamos sin el icono
-	@GOOS=windows GOARCH=amd64 go build $(WINDOWS_FLAGS) -o $@
-	# Luego añadimos el icono
-	@if [ -f "$(RSRC_BIN)" ]; then \
-		echo "Añadiendo icono al ejecutable..."; \
-		$(RSRC_BIN) -manifest assets/kujira-cli.manifest -ico $(ICON_SRC) -o kujira-cli.syso; \
-		# Recompilamos con el icono \
-		GOOS=windows GOARCH=amd64 go build $(WINDOWS_FLAGS) -o $@; \
-		rm -f kujira-cli.syso; \
+# Generar archivo .syso con la información de versión y el ícono
+versioninfo.syso: versioninfo.json $(ICON_SRC)
+	@if [ -f "$(GOVERSIONINFO_BIN)" ]; then \
+		echo "Generando archivo de recursos de Windows..."; \
+		$(GOVERSIONINFO_BIN) -icon $(ICON_SRC) -o $@; \
 	else \
-		echo "ADVERTENCIA: No se encontró rsrc. Asegúrate de que esté instalado y en tu PATH."; \
-		echo "Instálalo con: go install github.com/akavel/rsrc@latest"; \
-		echo "Y asegúrate de que $(go env GOPATH)/bin está en tu PATH"; \
-		echo "Continuando sin el icono..."; \
+		echo "ERROR: goversioninfo no está instalado. Por favor instálalo con:"; \
+		echo "go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest"; \
+		exit 1; \
 	fi
+
+# Construir para Windows
+dist/windows/kujira-cli.exe: versioninfo.syso
+	@echo "Compilando para Windows con icono y versión..."
+	@GOOS=windows GOARCH=amd64 go build $(WINDOWS_FLAGS) -o $@
+	@# Limpiar archivo .syso después de la compilación
+	@rm -f versioninfo.syso
+
+# Instalar dependencias para Windows
+deps-windows:
+	go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
 
 # Build para macOS
 dist/macos/kujira-cli:
 	GOOS=darwin GOARCH=amd64 go build $(VERSION_FLAGS) -o $@
-
-# Instalar dependencias para Windows (rsrc)
-deps-windows:
-	go install github.com/akavel/rsrc@latest
 
 # Crear directorios de salida
 prepare-dist:
@@ -62,56 +62,4 @@ clean:
 install: build
 	sudo cp kujira-cli /usr/local/bin/
 
-# Crear un archivo de manifiesto para Windows
-assets/kujira-cli.manifest:
-	@mkdir -p assets
-	@echo '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\
-<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">\
-  <assemblyIdentity \
-    version="$(VERSION)" \
-    processorArchitecture="*" \
-    name="Kujira.CLI" \
-    type="win32" \
-  />\
-  <description>Kujira CLI - Herramienta de línea de comandos para anime</description>\
-  <dependency>\
-    <dependentAssembly>\
-      <assemblyIdentity \
-        type="win32" \
-        name="Microsoft.Windows.Common-Controls" \
-        version="6.0.0.0" \
-        processorArchitecture="*" \
-        publicKeyToken="6595b64144ccf1df" \
-        language="*" \
-      />\
-    </dependentAssembly>\
-  </dependency>\
-  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">\
-    <security>\
-      <requestedPrivileges>\
-        <requestedExecutionLevel level="asInvoker" uiAccess="false"/>\
-      </requestedPrivileges>\
-    </security>\
-  </trustInfo>\
-  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">\
-    <application>\
-      <!-- Windows 10 and Windows 11 -->\
-      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>\
-      <!-- Windows 8.1 -->\
-      <supportedOS Id="{1f676c76-80e1-4239-95bb-83d0f6d0da78}"/>\
-      <!-- Windows 8 -->\
-      <supportedOS Id="{4a2f28e3-53b9-4441-ba9c-d69d4a4a6e38}"/>\
-      <!-- Windows 7 -->\
-      <supportedOS Id="{35138b9a-5d96-4fbd-8e2d-a2440225f93a}"/>\
-    </application>\
-  </compatibility>\
-</assembly>' > $@
 
-# # Descargar un icono de ejemplo si no existe
-# assets/icon.ico:
-# 	@mkdir -p assets
-# 	@echo "Descargando icono de ejemplo..."
-# 	@if ! curl -s -L -o $@ https://raw.githubusercontent.com/github/explore/80688e429a7d4ef2fca1e82350fe8e3517d3494d/topics/go/go.png; then \
-# 		echo "No se pudo descargar el icono. Por favor, coloca manualmente un archivo icon.ico en la carpeta assets/"; \
-# 		exit 1; \
-# 	fi
