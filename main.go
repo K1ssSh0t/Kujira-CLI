@@ -315,6 +315,128 @@ func (c *CLI) addToHistory(item HistoryItem) error {
 	return os.WriteFile(path, data, 0644)
 }
 
+// --- LIBRARY ---
+
+type LibraryStatus string
+
+const (
+	StatusAll         LibraryStatus = "Todos"
+	StatusWatching    LibraryStatus = "Viendo"
+	StatusPlanToWatch LibraryStatus = "Para ver"
+	StatusCompleted   LibraryStatus = "Completado"
+	StatusDropped     LibraryStatus = "Dropeado"
+	StatusOnHold      LibraryStatus = "En espera"
+)
+
+type LibraryItem struct {
+	Title     string        `json:"title"`
+	URL       string        `json:"url"`
+	Image     string        `json:"image"`
+	Status    LibraryStatus `json:"status"`
+	Provider  string        `json:"provider"`
+	UpdatedAt time.Time     `json:"updated_at"`
+}
+
+func getLibraryPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	configDir := filepath.Join(home, ".kujira_cli")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return "", err
+	}
+	return filepath.Join(configDir, "library.json"), nil
+}
+
+func (c *CLI) readLibrary() ([]LibraryItem, error) {
+	path, err := getLibraryPath()
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []LibraryItem{}, nil
+		}
+		return nil, err
+	}
+
+	var library []LibraryItem
+	if err := json.Unmarshal(data, &library); err != nil {
+		return nil, err
+	}
+	return library, nil
+}
+
+func (c *CLI) saveLibrary(library []LibraryItem) error {
+	data, err := json.MarshalIndent(library, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	path, err := getLibraryPath()
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, data, 0644)
+}
+
+func (c *CLI) updateLibraryItem(item LibraryItem) error {
+	library, err := c.readLibrary()
+	if err != nil {
+		return err
+	}
+
+	// Check if item exists and update it, or add new
+	found := false
+	for i, libItem := range library {
+		if libItem.URL == item.URL {
+			library[i] = item
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		library = append(library, item)
+	}
+
+	return c.saveLibrary(library)
+}
+
+func (c *CLI) removeFromLibrary(url string) error {
+	library, err := c.readLibrary()
+	if err != nil {
+		return err
+	}
+
+	newLibrary := []LibraryItem{}
+	for _, item := range library {
+		if item.URL != url {
+			newLibrary = append(newLibrary, item)
+		}
+	}
+
+	return c.saveLibrary(newLibrary)
+}
+
+func (c *CLI) getLibraryItem(url string) (*LibraryItem, error) {
+	library, err := c.readLibrary()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, item := range library {
+		if item.URL == url {
+			return &item, nil
+		}
+	}
+	return nil, nil
+}
+
 // --- API CALLS ---
 
 func (c *CLI) makeRequest(endpoint string) ([]byte, error) {
@@ -463,7 +585,7 @@ func (c *CLI) mainMenu() error {
 		var choice string
 		prompt := &survey.Select{
 			Message: "¿Qué deseas hacer?",
-			Options: []string{"Ver últimos animes", "Buscar anime", "Historial", "Cambiar proveedor", "Salir"},
+			Options: []string{"Ver últimos animes", "Buscar anime", "Mi Biblioteca", "Historial", "Cambiar proveedor", "Salir"},
 		}
 		survey.AskOne(prompt, &choice)
 
@@ -472,6 +594,8 @@ func (c *CLI) mainMenu() error {
 			c.showLatestAnime()
 		case "Buscar anime":
 			c.searchMenu()
+		case "Mi Biblioteca":
+			c.showLibraryMenu()
 		case "Historial":
 			c.showHistoryMenu()
 		case "Cambiar proveedor":
@@ -671,10 +795,10 @@ func (c *CLI) showAnimeInfo(animeURL string) error {
 		return err
 	}
 
-	return c.showEpisodesList(info.Episodes, info)
+	return c.showEpisodesList(info.Episodes, info, animeURL)
 }
 
-func (c *CLI) showEpisodesList(episodes []Episode, animeInfo *AnimeInfo) error {
+func (c *CLI) showEpisodesList(episodes []Episode, animeInfo *AnimeInfo, animeURL string) error {
 	const itemsPerPage = 10
 	currentPage := 0
 	totalPages := (len(episodes) + itemsPerPage - 1) / itemsPerPage
@@ -711,7 +835,7 @@ func (c *CLI) showEpisodesList(episodes []Episode, animeInfo *AnimeInfo) error {
 		}
 
 		currentEpisodes := episodes[start:end]
-		options := make([]string, 0, itemsPerPage+3)
+		options := make([]string, 0, itemsPerPage+4)
 		optionMap := make(map[string]Episode)
 
 		for _, ep := range currentEpisodes {
@@ -731,6 +855,7 @@ func (c *CLI) showEpisodesList(episodes []Episode, animeInfo *AnimeInfo) error {
 		if end < len(episodes) {
 			navOptions = append(navOptions, listNavStyle.Render("➡️  Página siguiente"))
 		}
+		navOptions = append(navOptions, listNavStyle.Render("📚 Gestionar en biblioteca"))
 		navOptions = append(navOptions, listNavStyle.Render("← Volver"))
 		options = append(options, navOptions...)
 
@@ -745,6 +870,9 @@ func (c *CLI) showEpisodesList(episodes []Episode, animeInfo *AnimeInfo) error {
 		switch choice {
 		case listNavStyle.Render("← Volver"):
 			return nil
+		case listNavStyle.Render("📚 Gestionar en biblioteca"):
+			c.manageLibraryStatus(animeInfo, animeURL)
+			continue
 		case listNavStyle.Render("⬅️  Página anterior"):
 			if currentPage > 0 {
 				currentPage--
@@ -823,6 +951,210 @@ func (c *CLI) showHistoryMenu() error {
 				Episode: selectedItem.Episode,
 			}
 			c.showEpisodeDetails(animeItem)
+		}
+	}
+}
+
+func (c *CLI) showLibraryMenu() error {
+	for {
+		clearScreen()
+		library, err := c.readLibrary()
+		if err != nil {
+			fmt.Println(errorStyle.Render("Error al leer la biblioteca:"), err)
+			return err
+		}
+
+		counts := make(map[LibraryStatus]int)
+		for _, item := range library {
+			counts[item.Status]++
+		}
+
+		options := []string{
+			fmt.Sprintf("Todos (%d)", len(library)),
+			fmt.Sprintf("Viendo (%d)", counts[StatusWatching]),
+			fmt.Sprintf("Para ver (%d)", counts[StatusPlanToWatch]),
+			fmt.Sprintf("Completado (%d)", counts[StatusCompleted]),
+			fmt.Sprintf("Dropeado (%d)", counts[StatusDropped]),
+			fmt.Sprintf("En espera (%d)", counts[StatusOnHold]),
+			"← Volver al menú principal",
+		}
+
+		var choice string
+		prompt := &survey.Select{
+			Message: titleStyle.Render("📚 Mi Biblioteca"),
+			Options: options,
+		}
+		survey.AskOne(prompt, &choice)
+
+		if strings.Contains(choice, "Volver") {
+			return nil
+		}
+
+		var selectedStatus LibraryStatus
+		if strings.HasPrefix(choice, "Todos") {
+			selectedStatus = StatusAll
+		} else if strings.HasPrefix(choice, "Viendo") {
+			selectedStatus = StatusWatching
+		} else if strings.HasPrefix(choice, "Para ver") {
+			selectedStatus = StatusPlanToWatch
+		} else if strings.HasPrefix(choice, "Completado") {
+			selectedStatus = StatusCompleted
+		} else if strings.HasPrefix(choice, "Dropeado") {
+			selectedStatus = StatusDropped
+		} else if strings.HasPrefix(choice, "En espera") {
+			selectedStatus = StatusOnHold
+		}
+
+		c.showLibraryCategory(selectedStatus)
+	}
+}
+
+func (c *CLI) showLibraryCategory(status LibraryStatus) error {
+	for {
+		clearScreen()
+		library, err := c.readLibrary()
+		if err != nil {
+			return err
+		}
+
+		var items []LibraryItem
+		for _, item := range library {
+			if status == StatusAll || item.Status == status {
+				items = append(items, item)
+			}
+		}
+
+		if len(items) == 0 {
+			clearScreen()
+			fmt.Println(boxStyle.Render(infoStyle.Render(fmt.Sprintf("No hay animes en '%s'.", status))))
+			fmt.Println(infoStyle.Render("Presiona Enter para continuar..."))
+			fmt.Scanln()
+			return nil
+		}
+
+		options := make([]string, len(items)+1)
+		optionMap := make(map[string]LibraryItem)
+
+		for i, item := range items {
+			var optionKey string
+			if status == StatusAll {
+				optionKey = fmt.Sprintf("%s %s - %s (%s)",
+					listBulletStyle.String(),
+					listAnimeTitleStyle.Render(item.Title),
+					infoStyle.Render(string(item.Status)),
+					infoStyle.Render(item.Provider),
+				)
+			} else {
+				optionKey = fmt.Sprintf("%s %s (%s)",
+					listBulletStyle.String(),
+					listAnimeTitleStyle.Render(item.Title),
+					infoStyle.Render(item.Provider),
+				)
+			}
+			options[i] = optionKey
+			optionMap[optionKey] = item
+		}
+		options[len(items)] = listNavStyle.Render("← Volver")
+
+		var choice string
+		prompt := &survey.Select{
+			Message:  titleStyle.Render(fmt.Sprintf("📚 %s", status)),
+			Options:  options,
+			PageSize: 15,
+		}
+		survey.AskOne(prompt, &choice)
+
+		if strings.Contains(choice, "Volver") {
+			return nil
+		}
+
+		if selectedItem, ok := optionMap[choice]; ok {
+			if c.provider != selectedItem.Provider {
+				fmt.Println(infoStyle.Render(fmt.Sprintf("Cambiando al proveedor: %s", selectedItem.Provider)))
+				c.provider = selectedItem.Provider
+			}
+
+			// We need to fetch anime info to get episodes, but showAnimeInfo takes URL.
+			// showAnimeInfo will call showEpisodesList which allows managing library status.
+			c.showAnimeInfo(selectedItem.URL)
+		}
+	}
+}
+
+func (c *CLI) manageLibraryStatus(animeInfo *AnimeInfo, animeURL string) error {
+	for {
+		clearScreen()
+		currentStatus := "No en la biblioteca"
+		existingItem, err := c.getLibraryItem(animeURL)
+		if err == nil && existingItem != nil {
+			currentStatus = string(existingItem.Status)
+		}
+
+		fmt.Println(titleStyle.Render("📚 Gestionar en Biblioteca"))
+		fmt.Println(infoStyle.Render(fmt.Sprintf("Anime: %s", animeInfo.Title)))
+		fmt.Println(infoStyle.Render(fmt.Sprintf("Estado actual: %s", currentStatus)))
+
+		options := []string{
+			"Viendo",
+			"Para ver",
+			"Completado",
+			"Dropeado",
+			"En espera",
+			"Eliminar de la biblioteca",
+			"← Volver",
+		}
+
+		var choice string
+		prompt := &survey.Select{
+			Message: "Selecciona un estado:",
+			Options: options,
+		}
+		survey.AskOne(prompt, &choice)
+
+		if choice == "← Volver" {
+			return nil
+		}
+
+		if choice == "Eliminar de la biblioteca" {
+			if err := c.removeFromLibrary(animeURL); err != nil {
+				fmt.Println(errorStyle.Render("Error al eliminar:"), err)
+				time.Sleep(time.Second * 2)
+			} else {
+				fmt.Println(infoStyle.Render("✅ Eliminado de la biblioteca"))
+				time.Sleep(time.Second * 1)
+			}
+			continue
+		}
+
+		var newStatus LibraryStatus
+		switch choice {
+		case "Viendo":
+			newStatus = StatusWatching
+		case "Para ver":
+			newStatus = StatusPlanToWatch
+		case "Completado":
+			newStatus = StatusCompleted
+		case "Dropeado":
+			newStatus = StatusDropped
+		case "En espera":
+			newStatus = StatusOnHold
+		}
+
+		newItem := LibraryItem{
+			Title:     animeInfo.Title,
+			URL:       animeURL,
+			Image:     animeInfo.Img,
+			Status:    newStatus,
+			Provider:  c.provider,
+			UpdatedAt: time.Now(),
+		}
+
+		if err := c.updateLibraryItem(newItem); err != nil {
+			fmt.Println(errorStyle.Render("Error al actualizar:"), err)
+			time.Sleep(time.Second * 2)
+		} else {
+			fmt.Println(infoStyle.Render(fmt.Sprintf("✅ Guardado como: %s", newStatus)))
+			time.Sleep(time.Second * 1)
 		}
 	}
 }

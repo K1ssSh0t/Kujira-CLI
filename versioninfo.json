@@ -3,13 +3,13 @@
     "FileVersion": {
       "Major": 1,
       "Minor": 0,
-      "Patch": 0,
+      "Patch": 1,
       "Build": 0
     },
     "ProductVersion": {
       "Major": 1,
       "Minor": 0,
-      "Patch": 0,
+      "Patch": 1,
       "Build": 0
     },
     "FileFlagsMask": "3f",
@@ -22,14 +22,14 @@
     "Comments": "Kujira CLI - Herramienta de línea de comandos para anime",
     "CompanyName": "",
     "FileDescription": "Kujira CLI - Herramienta de línea de comandos para anime",
-    "FileVersion": "1.0.0.0",
+    "FileVersion": "1.0.1.0",
     "InternalName": "kujira-cli",
     "LegalCopyright": "",
     "LegalTrademarks": "",
     "OriginalFilename": "kujira-cli.exe",
     "PrivateBuild": "",
     "ProductName": "Kujira CLI",
-    "ProductVersion": "1.0.0.0",
+    "ProductVersion": "1.0.1.0",
     "SpecialBuild": ""
   },
   "VarFileInfo": {
