@@ -7,7 +7,9 @@ require (
 	github.com/PuerkitoBio/goquery v1.10.3
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/grafov/m3u8 v0.12.1
+	github.com/nstratos/go-myanimelist v0.9.5
 	github.com/spf13/cobra v1.9.1
+	golang.org/x/oauth2 v0.34.0
 )
 
 require (

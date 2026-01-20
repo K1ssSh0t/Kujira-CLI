@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"kujira_cli/extractors"
+	"kujira_cli/sync"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/charmbracelet/lipgloss"
@@ -138,14 +139,6 @@ type SearchResult struct {
 	Type  string `json:"type"`
 }
 
-type HistoryItem struct {
-	Title     string    `json:"title"`
-	Episode   string    `json:"episode"`
-	URL       string    `json:"url"`
-	Provider  string    `json:"provider"`
-	Timestamp time.Time `json:"timestamp"`
-}
-
 type CLI struct {
 	baseURL  string
 	client   *http.Client
@@ -257,7 +250,7 @@ func getHistoryPath() (string, error) {
 	return filepath.Join(configDir, "history.json"), nil
 }
 
-func (c *CLI) readHistory() ([]HistoryItem, error) {
+func (c *CLI) ReadHistory() ([]sync.HistoryItem, error) {
 	path, err := getHistoryPath()
 	if err != nil {
 		return nil, err
@@ -266,26 +259,26 @@ func (c *CLI) readHistory() ([]HistoryItem, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return []HistoryItem{}, nil // Return empty slice if file doesn't exist
+			return []sync.HistoryItem{}, nil // Return empty slice if file doesn't exist
 		}
 		return nil, err
 	}
 
-	var history []HistoryItem
+	var history []sync.HistoryItem
 	if err := json.Unmarshal(data, &history); err != nil {
 		return nil, err
 	}
 	return history, nil
 }
 
-func (c *CLI) addToHistory(item HistoryItem) error {
-	history, err := c.readHistory()
+func (c *CLI) addToHistory(item sync.HistoryItem) error {
+	history, err := c.ReadHistory()
 	if err != nil {
 		return err
 	}
 
 	// Remove duplicates, keeping the latest one
-	newHistory := []HistoryItem{item}
+	newHistory := []sync.HistoryItem{item}
 	for _, h := range history {
 		if h.URL != item.URL {
 			newHistory = append(newHistory, h)
@@ -317,26 +310,6 @@ func (c *CLI) addToHistory(item HistoryItem) error {
 
 // --- LIBRARY ---
 
-type LibraryStatus string
-
-const (
-	StatusAll         LibraryStatus = "Todos"
-	StatusWatching    LibraryStatus = "Viendo"
-	StatusPlanToWatch LibraryStatus = "Para ver"
-	StatusCompleted   LibraryStatus = "Completado"
-	StatusDropped     LibraryStatus = "Dropeado"
-	StatusOnHold      LibraryStatus = "En espera"
-)
-
-type LibraryItem struct {
-	Title     string        `json:"title"`
-	URL       string        `json:"url"`
-	Image     string        `json:"image"`
-	Status    LibraryStatus `json:"status"`
-	Provider  string        `json:"provider"`
-	UpdatedAt time.Time     `json:"updated_at"`
-}
-
 func getLibraryPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -349,7 +322,7 @@ func getLibraryPath() (string, error) {
 	return filepath.Join(configDir, "library.json"), nil
 }
 
-func (c *CLI) readLibrary() ([]LibraryItem, error) {
+func (c *CLI) ReadLibrary() ([]sync.LibraryItem, error) {
 	path, err := getLibraryPath()
 	if err != nil {
 		return nil, err
@@ -358,19 +331,19 @@ func (c *CLI) readLibrary() ([]LibraryItem, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return []LibraryItem{}, nil
+			return []sync.LibraryItem{}, nil
 		}
 		return nil, err
 	}
 
-	var library []LibraryItem
+	var library []sync.LibraryItem
 	if err := json.Unmarshal(data, &library); err != nil {
 		return nil, err
 	}
 	return library, nil
 }
 
-func (c *CLI) saveLibrary(library []LibraryItem) error {
+func (c *CLI) saveLibrary(library []sync.LibraryItem) error {
 	data, err := json.MarshalIndent(library, "", "  ")
 	if err != nil {
 		return err
@@ -384,8 +357,8 @@ func (c *CLI) saveLibrary(library []LibraryItem) error {
 	return os.WriteFile(path, data, 0644)
 }
 
-func (c *CLI) updateLibraryItem(item LibraryItem) error {
-	library, err := c.readLibrary()
+func (c *CLI) updateLibraryItem(item sync.LibraryItem) error {
+	library, err := c.ReadLibrary()
 	if err != nil {
 		return err
 	}
@@ -408,12 +381,12 @@ func (c *CLI) updateLibraryItem(item LibraryItem) error {
 }
 
 func (c *CLI) removeFromLibrary(url string) error {
-	library, err := c.readLibrary()
+	library, err := c.ReadLibrary()
 	if err != nil {
 		return err
 	}
 
-	newLibrary := []LibraryItem{}
+	newLibrary := []sync.LibraryItem{}
 	for _, item := range library {
 		if item.URL != url {
 			newLibrary = append(newLibrary, item)
@@ -423,8 +396,8 @@ func (c *CLI) removeFromLibrary(url string) error {
 	return c.saveLibrary(newLibrary)
 }
 
-func (c *CLI) getLibraryItem(url string) (*LibraryItem, error) {
-	library, err := c.readLibrary()
+func (c *CLI) getLibraryItem(url string) (*sync.LibraryItem, error) {
+	library, err := c.ReadLibrary()
 	if err != nil {
 		return nil, err
 	}
@@ -559,7 +532,7 @@ func (c *CLI) playVideo(server Server, details *EpisodeDetails, animeURL string)
 	cmd := exec.Command("mpv", "--force-window=immediate", fmt.Sprintf("--http-header-fields=Referer: %s", server.URL), videoURL)
 	err := cmd.Start()
 	if err == nil {
-		historyItem := HistoryItem{
+		historyItem := sync.HistoryItem{
 			Title:     details.Title,
 			Episode:   details.NumberEpisode,
 			URL:       animeURL,
@@ -585,7 +558,7 @@ func (c *CLI) mainMenu() error {
 		var choice string
 		prompt := &survey.Select{
 			Message: "¿Qué deseas hacer?",
-			Options: []string{"Ver últimos animes", "Buscar anime", "Mi Biblioteca", "Historial", "Cambiar proveedor", "Salir"},
+			Options: []string{"Ver últimos animes", "Buscar anime", "Mi Biblioteca", "Historial", "Sincronizar con MAL", "Cambiar proveedor", "Salir"},
 		}
 		survey.AskOne(prompt, &choice)
 
@@ -598,6 +571,8 @@ func (c *CLI) mainMenu() error {
 			c.showLibraryMenu()
 		case "Historial":
 			c.showHistoryMenu()
+		case "Sincronizar con MAL":
+			c.showSyncMenu()
 		case "Cambiar proveedor":
 			if err := c.selectProvider(); err != nil {
 				return err
@@ -895,7 +870,7 @@ func (c *CLI) showEpisodesList(episodes []Episode, animeInfo *AnimeInfo, animeUR
 func (c *CLI) showHistoryMenu() error {
 	clearScreen()
 	fmt.Println(infoStyle.Render("📡 Cargando historial..."))
-	history, err := c.readHistory()
+	history, err := c.ReadHistory()
 	if err != nil {
 		fmt.Println(errorStyle.Render("Error al leer el historial:"), err)
 		return err
@@ -912,7 +887,7 @@ func (c *CLI) showHistoryMenu() error {
 	for {
 		clearScreen()
 		options := make([]string, len(history)+1)
-		optionMap := make(map[string]HistoryItem)
+		optionMap := make(map[string]sync.HistoryItem)
 
 		for i, item := range history {
 			optionKey := fmt.Sprintf("%s %s - %s (%s) - %s",
@@ -958,24 +933,24 @@ func (c *CLI) showHistoryMenu() error {
 func (c *CLI) showLibraryMenu() error {
 	for {
 		clearScreen()
-		library, err := c.readLibrary()
+		library, err := c.ReadLibrary()
 		if err != nil {
 			fmt.Println(errorStyle.Render("Error al leer la biblioteca:"), err)
 			return err
 		}
 
-		counts := make(map[LibraryStatus]int)
+		counts := make(map[sync.LibraryStatus]int)
 		for _, item := range library {
 			counts[item.Status]++
 		}
 
 		options := []string{
 			fmt.Sprintf("Todos (%d)", len(library)),
-			fmt.Sprintf("Viendo (%d)", counts[StatusWatching]),
-			fmt.Sprintf("Para ver (%d)", counts[StatusPlanToWatch]),
-			fmt.Sprintf("Completado (%d)", counts[StatusCompleted]),
-			fmt.Sprintf("Dropeado (%d)", counts[StatusDropped]),
-			fmt.Sprintf("En espera (%d)", counts[StatusOnHold]),
+			fmt.Sprintf("Viendo (%d)", counts[sync.StatusWatching]),
+			fmt.Sprintf("Para ver (%d)", counts[sync.StatusPlanToWatch]),
+			fmt.Sprintf("Completado (%d)", counts[sync.StatusCompleted]),
+			fmt.Sprintf("Dropeado (%d)", counts[sync.StatusDropped]),
+			fmt.Sprintf("En espera (%d)", counts[sync.StatusOnHold]),
 			"← Volver al menú principal",
 		}
 
@@ -990,36 +965,36 @@ func (c *CLI) showLibraryMenu() error {
 			return nil
 		}
 
-		var selectedStatus LibraryStatus
+		var selectedStatus sync.LibraryStatus
 		if strings.HasPrefix(choice, "Todos") {
-			selectedStatus = StatusAll
+			selectedStatus = sync.StatusAll
 		} else if strings.HasPrefix(choice, "Viendo") {
-			selectedStatus = StatusWatching
+			selectedStatus = sync.StatusWatching
 		} else if strings.HasPrefix(choice, "Para ver") {
-			selectedStatus = StatusPlanToWatch
+			selectedStatus = sync.StatusPlanToWatch
 		} else if strings.HasPrefix(choice, "Completado") {
-			selectedStatus = StatusCompleted
+			selectedStatus = sync.StatusCompleted
 		} else if strings.HasPrefix(choice, "Dropeado") {
-			selectedStatus = StatusDropped
+			selectedStatus = sync.StatusDropped
 		} else if strings.HasPrefix(choice, "En espera") {
-			selectedStatus = StatusOnHold
+			selectedStatus = sync.StatusOnHold
 		}
 
 		c.showLibraryCategory(selectedStatus)
 	}
 }
 
-func (c *CLI) showLibraryCategory(status LibraryStatus) error {
+func (c *CLI) showLibraryCategory(status sync.LibraryStatus) error {
 	for {
 		clearScreen()
-		library, err := c.readLibrary()
+		library, err := c.ReadLibrary()
 		if err != nil {
 			return err
 		}
 
-		var items []LibraryItem
+		var items []sync.LibraryItem
 		for _, item := range library {
-			if status == StatusAll || item.Status == status {
+			if status == sync.StatusAll || item.Status == status {
 				items = append(items, item)
 			}
 		}
@@ -1033,11 +1008,11 @@ func (c *CLI) showLibraryCategory(status LibraryStatus) error {
 		}
 
 		options := make([]string, len(items)+1)
-		optionMap := make(map[string]LibraryItem)
+		optionMap := make(map[string]sync.LibraryItem)
 
 		for i, item := range items {
 			var optionKey string
-			if status == StatusAll {
+			if status == sync.StatusAll {
 				optionKey = fmt.Sprintf("%s %s - %s (%s)",
 					listBulletStyle.String(),
 					listAnimeTitleStyle.Render(item.Title),
@@ -1126,21 +1101,21 @@ func (c *CLI) manageLibraryStatus(animeInfo *AnimeInfo, animeURL string) error {
 			continue
 		}
 
-		var newStatus LibraryStatus
+		var newStatus sync.LibraryStatus
 		switch choice {
 		case "Viendo":
-			newStatus = StatusWatching
+			newStatus = sync.StatusWatching
 		case "Para ver":
-			newStatus = StatusPlanToWatch
+			newStatus = sync.StatusPlanToWatch
 		case "Completado":
-			newStatus = StatusCompleted
+			newStatus = sync.StatusCompleted
 		case "Dropeado":
-			newStatus = StatusDropped
+			newStatus = sync.StatusDropped
 		case "En espera":
-			newStatus = StatusOnHold
+			newStatus = sync.StatusOnHold
 		}
 
-		newItem := LibraryItem{
+		newItem := sync.LibraryItem{
 			Title:     animeInfo.Title,
 			URL:       animeURL,
 			Image:     animeInfo.Img,
@@ -1157,6 +1132,342 @@ func (c *CLI) manageLibraryStatus(animeInfo *AnimeInfo, animeURL string) error {
 			time.Sleep(time.Second * 1)
 		}
 	}
+}
+
+// --- SYNC MENUS ---
+
+func (c *CLI) showSyncMenu() error {
+	for {
+		clearScreen()
+		config, err := sync.ReadSyncConfig()
+		if err != nil {
+			fmt.Println(errorStyle.Render("Error al leer configuración:"), err)
+			time.Sleep(time.Second * 2)
+			return nil
+		}
+
+		syncStatus := "No configurado"
+		if config.MAL.AccessToken != "" {
+			if time.Until(config.MAL.TokenExpiry) > 0 {
+				syncStatus = fmt.Sprintf("Configurado (expira en %s)", time.Until(config.MAL.TokenExpiry).Round(time.Minute))
+			} else {
+				syncStatus = "Token expirado - necesita autenticación"
+			}
+		}
+
+		fmt.Println(titleStyle.Render("🔄 Sincronización con MyAnimeList"))
+		fmt.Println(infoStyle.Render(fmt.Sprintf("Estado: %s", syncStatus)))
+		fmt.Println(infoStyle.Render(fmt.Sprintf("Auto-sync: %v", config.AutoSync)))
+
+		var choice string
+		options := []string{
+			"Configurar MAL",
+			"Probar conexión",
+			"Sincronizar biblioteca",
+			"Sincronizar historial",
+			"Sincronización completa",
+			"Activar/Desactivar auto-sync",
+			"← Volver",
+		}
+
+		if config.MAL.AccessToken == "" {
+			options = []string{"Configurar MAL", "← Volver"}
+		}
+
+		prompt := &survey.Select{
+			Message: "Selecciona una opción:",
+			Options: options,
+		}
+		survey.AskOne(prompt, &choice)
+
+		if strings.Contains(choice, "Volver") {
+			return nil
+		}
+
+		if choice == "Configurar MAL" {
+			if err := c.configureMAL(); err != nil {
+				fmt.Println(errorStyle.Render("Error:"), err)
+				time.Sleep(time.Second * 2)
+			}
+		} else if choice == "Probar conexión" {
+			if err := c.testMALConnection(); err != nil {
+				fmt.Println(errorStyle.Render("Error:"), err)
+			} else {
+				fmt.Println(infoStyle.Render("✅ Conexión exitosa!"))
+			}
+			time.Sleep(time.Second * 2)
+		} else if choice == "Sincronizar biblioteca" {
+			if err := c.syncLibraryToMAL(); err != nil {
+				fmt.Println(errorStyle.Render("Error:"), err)
+			}
+			time.Sleep(time.Second * 3)
+		} else if choice == "Sincronizar historial" {
+			if err := c.syncHistoryToMAL(); err != nil {
+				fmt.Println(errorStyle.Render("Error:"), err)
+			}
+			time.Sleep(time.Second * 3)
+		} else if choice == "Sincronización completa" {
+			if err := c.fullSyncToMAL(); err != nil {
+				fmt.Println(errorStyle.Render("Error:"), err)
+			}
+			time.Sleep(time.Second * 3)
+		} else if choice == "Activar/Desactivar auto-sync" {
+			config.AutoSync = !config.AutoSync
+			if err := sync.SaveSyncConfig(config); err != nil {
+				fmt.Println(errorStyle.Render("Error al guardar configuración:"), err)
+			} else {
+				fmt.Println(infoStyle.Render(fmt.Sprintf("Auto-sync: %v", config.AutoSync)))
+			}
+			time.Sleep(time.Second * 1)
+		}
+	}
+}
+
+func (c *CLI) configureMAL() error {
+	clearScreen()
+	log.Printf("🔐 Configurar MyAnimeList")
+	log.Printf("1. Ve a https://myanimelist.net/apiconfig")
+	log.Printf("2. Crea una aplicación de API")
+	log.Printf("3. Copia el Client ID y Client Secret")
+
+	var clientID, clientSecret string
+	prompt := &survey.Input{
+		Message: "Client ID:",
+	}
+	survey.AskOne(prompt, &clientID)
+
+	prompt = &survey.Input{
+		Message: "Client Secret:",
+	}
+	survey.AskOne(prompt, &clientSecret)
+
+	if clientID == "" || clientSecret == "" {
+		return fmt.Errorf("Client ID y Secret son requeridos")
+	}
+
+	config, err := sync.ReadSyncConfig()
+	if err != nil {
+		return fmt.Errorf("error al leer configuración: %v", err)
+	}
+
+	config.Provider = sync.ProviderMyAnimeList
+	config.MAL.ClientID = clientID
+	config.MAL.ClientSecret = clientSecret
+
+	clearScreen()
+	log.Printf("Iniciando autenticación OAuth2...")
+
+	codeVerifier := sync.GenerateCodeVerifier()
+	codeChallenge := sync.GenerateCodeChallenge(codeVerifier)
+
+	log.Printf("PKCE: Generated code_verifier = %s", codeVerifier)
+	log.Printf("PKCE: Generated code_challenge = %s", codeChallenge)
+
+	codeChan, err := sync.StartMALAuthServer()
+	if err != nil {
+		return fmt.Errorf("error al iniciar servidor de autenticación: %v", err)
+	}
+
+	malSync, err := sync.NewMALSync(&config.MAL)
+	if err != nil {
+		return fmt.Errorf("error al crear cliente MAL: %v", err)
+	}
+
+	authURL := malSync.GetAuthURL(codeChallenge)
+	log.Printf("PKCE: AuthURL generated = %s", authURL) // Log AuthURL directly before display
+
+	fmt.Printf("Abre este enlace en tu navegador:\n\n%s\n\n", authURL)
+
+	code := <-codeChan
+
+	log.Printf("Código de autorización recibido! Intercambiando por token...")
+
+	accessToken, refreshToken, expiry, err := malSync.ExchangeCodeForToken(code, codeVerifier)
+	if err != nil {
+		return fmt.Errorf("error al intercambiar código por token: %v", err)
+	}
+
+	config.MAL.AccessToken = accessToken
+	config.MAL.RefreshToken = refreshToken
+	config.MAL.TokenExpiry = expiry
+
+	if err := sync.SaveSyncConfig(config); err != nil {
+		return fmt.Errorf("error al guardar configuración: %v", err)
+	}
+
+	log.Printf("✅ Configuración completada!")
+	return nil
+}
+
+func (c *CLI) testMALConnection() error {
+	config, err := sync.ReadSyncConfig()
+	if err != nil {
+		return fmt.Errorf("error al leer configuración: %v", err)
+	}
+
+	malSync, err := sync.NewMALSync(&config.MAL)
+	if err != nil {
+		return fmt.Errorf("error al crear cliente MAL: %v", err)
+	}
+
+	user, err := malSync.GetUser()
+	if err != nil {
+		return fmt.Errorf("error al conectar con MAL: %v", err)
+	}
+
+	fmt.Println(infoStyle.Render(fmt.Sprintf("Usuario: %s (%d)", user.Name, user.ID)))
+	fmt.Println(infoStyle.Render(fmt.Sprintf("Joined: %s", user.JoinedAt.Format("2006-01-02"))))
+	fmt.Println(infoStyle.Render(fmt.Sprintf("Anime entries: %d", user.AnimeStatistics.NumItems)))
+
+	return nil
+}
+
+func (c *CLI) syncLibraryToMAL() error {
+	config, err := sync.ReadSyncConfig()
+	if err != nil {
+		return err
+	}
+
+	syncService, err := sync.NewSyncService(config, c.ReadLibrary, c.ReadHistory)
+	if err != nil {
+		return fmt.Errorf("error al crear servicio de sincronización: %v", err)
+	}
+
+	clearScreen()
+	fmt.Println(infoStyle.Render("📤 Sincronizando biblioteca con MAL..."))
+
+	result, err := syncService.SyncLibrary()
+	if err != nil {
+		return fmt.Errorf("error durante sincronización: %v", err)
+	}
+
+	if result.Success {
+		fmt.Println(infoStyle.Render(fmt.Sprintf("✅ %d anime(s) sincronizados", len(result.Uploaded))))
+		for _, title := range result.Uploaded {
+			fmt.Println(infoStyle.Render(fmt.Sprintf("  • %s", title)))
+		}
+	} else {
+		fmt.Println(errorStyle.Render("❌ Sincronización con errores"))
+		for _, errMsg := range result.Errors {
+			fmt.Println(errorStyle.Render(fmt.Sprintf("  • %s", errMsg)))
+		}
+	}
+
+	if err := sync.SaveSyncConfig(config); err != nil {
+		log.Printf("Warning: Could not save updated config: %v", err)
+	}
+
+	return nil
+}
+
+func (c *CLI) syncHistoryToMAL() error {
+	config, err := sync.ReadSyncConfig()
+	if err != nil {
+		return err
+	}
+
+	syncService, err := sync.NewSyncService(config, c.ReadLibrary, c.ReadHistory)
+	if err != nil {
+		return fmt.Errorf("error al crear servicio de sincronización: %v", err)
+	}
+
+	clearScreen()
+	fmt.Println(infoStyle.Render("📤 Sincronizando historial con MAL..."))
+
+	result, err := syncService.SyncHistory()
+	if err != nil {
+		return fmt.Errorf("error durante sincronización: %v", err)
+	}
+
+	if result.Success {
+		fmt.Println(infoStyle.Render(fmt.Sprintf("✅ %d actualización(es) de episodios", len(result.Updated))))
+		for _, update := range result.Updated {
+			fmt.Println(infoStyle.Render(fmt.Sprintf("  • %s", update)))
+		}
+	} else {
+		fmt.Println(errorStyle.Render("❌ Sincronización con errores"))
+		for _, errMsg := range result.Errors {
+			fmt.Println(errorStyle.Render(fmt.Sprintf("  • %s", errMsg)))
+		}
+	}
+
+	if err := sync.SaveSyncConfig(config); err != nil {
+		log.Printf("Warning: Could not save updated config: %v", err)
+	}
+
+	return nil
+}
+
+func (c *CLI) fullSyncToMAL() error {
+	config, err := sync.ReadSyncConfig()
+	if err != nil {
+		return err
+	}
+
+	syncService, err := sync.NewSyncService(config, c.ReadLibrary, c.ReadHistory)
+	if err != nil {
+		return fmt.Errorf("error al crear servicio de sincronización: %v", err)
+	}
+
+	clearScreen()
+	fmt.Println(infoStyle.Render("🔄 Sincronización completa con MAL..."))
+	fmt.Println(infoStyle.Render("Incluyendo biblioteca e historial..."))
+
+	result, err := syncService.FullSync()
+	if err != nil {
+		return fmt.Errorf("error durante sincronización: %v", err)
+	}
+
+	if result.Success {
+		fmt.Println(infoStyle.Render("✅ Sincronización exitosa"))
+		fmt.Println(infoStyle.Render(fmt.Sprintf("  Biblioteca: %d anime(s)", len(result.Uploaded))))
+		fmt.Println(infoStyle.Render(fmt.Sprintf("  Historial: %d actualización(es)", len(result.Updated))))
+	} else {
+		fmt.Println(errorStyle.Render("⚠️ Sincronización completada con errores"))
+		fmt.Println(infoStyle.Render(fmt.Sprintf("  Exitos: %d + %d", len(result.Uploaded), len(result.Updated))))
+		fmt.Println(infoStyle.Render(fmt.Sprintf("  Errores: %d", len(result.Errors))))
+		for _, errMsg := range result.Errors[:min(5, len(result.Errors))] {
+			fmt.Println(errorStyle.Render(fmt.Sprintf("  • %s", errMsg)))
+		}
+		if len(result.Errors) > 5 {
+			fmt.Println(infoStyle.Render(fmt.Sprintf("  ... y %d más", len(result.Errors)-5)))
+		}
+	}
+
+	config.LastSyncAt = time.Now()
+	if err := sync.SaveSyncConfig(config); err != nil {
+		log.Printf("Warning: Could not save updated config: %v", err)
+	}
+
+	return nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func (c *CLI) autoSync(title string, libraryStatus string) error {
+	config, err := sync.ReadSyncConfig()
+	if err != nil || !config.AutoSync || config.Provider != sync.ProviderMyAnimeList {
+		return nil
+	}
+
+	syncService, err := sync.NewSyncService(config, c.ReadLibrary, c.ReadHistory)
+	if err != nil {
+		log.Printf("Warning: Could not create sync service for auto-sync: %v", err)
+		return nil
+	}
+
+	malStatus := sync.MALStatusFromLibrary(libraryStatus)
+	if err := syncService.AddToMAL(title, string(malStatus), 0, 0); err != nil {
+		log.Printf("Warning: Auto-sync failed for '%s': %v", title, err)
+	}
+
+	log.Printf("Auto-synced '%s' to MAL with status: %s", title, malStatus)
+	return nil
 }
 
 func main() {
