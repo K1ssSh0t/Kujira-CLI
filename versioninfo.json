@@ -1,41 +1,41 @@
 {
-  "FixedFileInfo": {
-    "FileVersion": {
-      "Major": 1,
-      "Minor": 0,
-      "Patch": 1,
-      "Build": 0
+    "FixedFileInfo": {
+        "FileVersion": {
+            "Major": 1,
+            "Minor": 0,
+            "Patch": 1,
+            "Build": 0
+        },
+        "ProductVersion": {
+            "Major": 1,
+            "Minor": 0,
+            "Patch": 1,
+            "Build": 0
+        },
+        "FileFlagsMask": "3f",
+        "FileFlags ": "00",
+        "FileOS": "040004",
+        "FileType": "01",
+        "FileSubType": "00"
     },
-    "ProductVersion": {
-      "Major": 1,
-      "Minor": 0,
-      "Patch": 1,
-      "Build": 0
+    "StringFileInfo": {
+        "Comments": "Kujira CLI - Herramienta de línea de comandos para anime",
+        "CompanyName": "",
+        "FileDescription": "Kujira CLI - Herramienta de línea de comandos para anime",
+        "FileVersion": "1.1.0.0",
+        "InternalName": "kujira-cli",
+        "LegalCopyright": "",
+        "LegalTrademarks": "",
+        "OriginalFilename": "Kujira-CLI.exe",
+        "PrivateBuild": "",
+        "ProductName": "Kujira CLI",
+        "ProductVersion": "1.1.0.0",
+        "SpecialBuild": ""
     },
-    "FileFlagsMask": "3f",
-    "FileFlags ": "00",
-    "FileOS": "040004",
-    "FileType": "01",
-    "FileSubType": "00"
-  },
-  "StringFileInfo": {
-    "Comments": "Kujira CLI - Herramienta de línea de comandos para anime",
-    "CompanyName": "",
-    "FileDescription": "Kujira CLI - Herramienta de línea de comandos para anime",
-    "FileVersion": "1.0.1.0",
-    "InternalName": "kujira-cli",
-    "LegalCopyright": "",
-    "LegalTrademarks": "",
-    "OriginalFilename": "kujira-cli.exe",
-    "PrivateBuild": "",
-    "ProductName": "Kujira CLI",
-    "ProductVersion": "1.0.1.0",
-    "SpecialBuild": ""
-  },
-  "VarFileInfo": {
-    "Translation": {
-      "LangID": "0409",
-      "CharsetID": "04B0"
+    "VarFileInfo": {
+        "Translation": {
+            "LangID": "0409",
+            "CharsetID": "04B0"
+        }
     }
-  }
 }
