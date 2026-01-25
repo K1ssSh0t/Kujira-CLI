@@ -1225,77 +1225,70 @@ func (c *CLI) showSyncMenu() error {
 
 func (c *CLI) configureMAL() error {
 	clearScreen()
-	log.Printf("🔐 Configurar MyAnimeList")
-	log.Printf("1. Ve a https://myanimelist.net/apiconfig")
-	log.Printf("2. Crea una aplicación de API")
-	log.Printf("3. Copia el Client ID y Client Secret")
+	log.Printf("Conectar con MyAnimeList")
+	log.Printf("La autenticación se maneja a través del servidor Kujira.")
+	log.Printf("No necesitas crear tu propia aplicación de API.")
 
-	var clientID, clientSecret string
-	prompt := &survey.Input{
-		Message: "Client ID:",
+	// Check backend status first
+	log.Printf("Verificando conexión con el servidor...")
+	status, err := sync.CheckBackendStatus()
+	if err != nil {
+		return fmt.Errorf("no se pudo conectar con el servidor: %v", err)
 	}
-	survey.AskOne(prompt, &clientID)
 
-	prompt = &survey.Input{
-		Message: "Client Secret:",
+	if !status.Configured {
+		return fmt.Errorf("el servidor no está configurado para MAL: %s", status.Message)
 	}
-	survey.AskOne(prompt, &clientSecret)
 
-	if clientID == "" || clientSecret == "" {
-		return fmt.Errorf("Client ID y Secret son requeridos")
+	log.Printf("Servidor listo. Iniciando autenticación OAuth2...")
+
+	// Get auth URL from backend
+	authResp, err := sync.GetAuthURLFromBackend()
+	if err != nil {
+		return fmt.Errorf("error al obtener URL de autenticación: %v", err)
 	}
+
+	// Start local callback server
+	tokenChan, server, err := sync.StartMALAuthServer()
+	if err != nil {
+		return fmt.Errorf("error al iniciar servidor de autenticación: %v", err)
+	}
+	defer server.Close()
+
+	fmt.Printf("\nAbre este enlace en tu navegador:\n\n%s\n\n", authResp.AuthURL)
+	log.Printf("Esperando autorización...")
+
+	// Wait for callback with tokens
+	tokenResp := <-tokenChan
+
+	log.Printf("Tokens recibidos! Guardando configuración...")
 
 	config, err := sync.ReadSyncConfig()
 	if err != nil {
 		return fmt.Errorf("error al leer configuración: %v", err)
 	}
 
+	expiry := time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
+
 	config.Provider = sync.ProviderMyAnimeList
-	config.MAL.ClientID = clientID
-	config.MAL.ClientSecret = clientSecret
-
-	clearScreen()
-	log.Printf("Iniciando autenticación OAuth2...")
-
-	codeVerifier := sync.GenerateCodeVerifier()
-	codeChallenge := sync.GenerateCodeChallenge(codeVerifier)
-
-	log.Printf("PKCE: Generated code_verifier = %s", codeVerifier)
-	log.Printf("PKCE: Generated code_challenge = %s", codeChallenge)
-
-	codeChan, err := sync.StartMALAuthServer()
-	if err != nil {
-		return fmt.Errorf("error al iniciar servidor de autenticación: %v", err)
-	}
-
-	malSync, err := sync.NewMALSync(&config.MAL)
-	if err != nil {
-		return fmt.Errorf("error al crear cliente MAL: %v", err)
-	}
-
-	authURL := malSync.GetAuthURL(codeChallenge)
-	log.Printf("PKCE: AuthURL generated = %s", authURL) // Log AuthURL directly before display
-
-	fmt.Printf("Abre este enlace en tu navegador:\n\n%s\n\n", authURL)
-
-	code := <-codeChan
-
-	log.Printf("Código de autorización recibido! Intercambiando por token...")
-
-	accessToken, refreshToken, expiry, err := malSync.ExchangeCodeForToken(code, codeVerifier)
-	if err != nil {
-		return fmt.Errorf("error al intercambiar código por token: %v", err)
-	}
-
-	config.MAL.AccessToken = accessToken
-	config.MAL.RefreshToken = refreshToken
+	config.MAL.AccessToken = tokenResp.AccessToken
+	config.MAL.RefreshToken = tokenResp.RefreshToken
 	config.MAL.TokenExpiry = expiry
+
+	// Get username
+	malSync, err := sync.NewMALSync(&config.MAL)
+	if err == nil {
+		if user, err := malSync.GetUser(); err == nil {
+			config.MAL.Username = user.Name
+			log.Printf("Conectado como: %s", user.Name)
+		}
+	}
 
 	if err := sync.SaveSyncConfig(config); err != nil {
 		return fmt.Errorf("error al guardar configuración: %v", err)
 	}
 
-	log.Printf("✅ Configuración completada!")
+	log.Printf("Configuración completada!")
 	return nil
 }
 

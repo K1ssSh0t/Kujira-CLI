@@ -27,9 +27,9 @@ type MALConfig struct {
 	AccessToken  string    `json:"access_token"`
 	RefreshToken string    `json:"refresh_token"`
 	TokenExpiry  time.Time `json:"token_expiry"`
-	ClientID     string    `json:"client_id"`
-	ClientSecret string    `json:"client_secret"`
-	AuthCode     string    `json:"auth_code"`
+	Username     string    `json:"username"`
+	// Note: ClientID and ClientSecret are no longer stored here
+	// They are now managed by the Kujira backend
 }
 
 type AniListConfig struct {

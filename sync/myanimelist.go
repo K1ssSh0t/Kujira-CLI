@@ -1,21 +1,23 @@
 package sync
 
 import (
+	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
 	"github.com/nstratos/go-myanimelist/mal"
 	"golang.org/x/oauth2"
 )
+
+// KujiraBackendURL is the URL of the Kujira backend for MAL auth
+// Change this to your deployed backend URL
+const KujiraBackendURL = "https://kujira.unusualoticramo.workers.dev"
 
 const (
 	MALRedirectURL = "http://localhost:8080/callback"
@@ -29,25 +31,93 @@ type MALSync struct {
 	config     *MALConfig
 }
 
-// GenerateCodeVerifier creates a high-entropy cryptographic random string used for PKCE.
-func GenerateCodeVerifier() string {
-	b := make([]byte, 32)
-	rand.Read(b)
-	return hex.EncodeToString(b)
+// AuthInitResponse is the response from the backend /auth/mal/init endpoint
+type AuthInitResponse struct {
+	AuthURL string `json:"authUrl"`
+	State   string `json:"state"`
 }
 
-func GenerateCodeChallenge(verifier string) string {
-	return verifier
+// TokenResponse is the response from the backend with tokens
+type TokenResponse struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiresIn    int    `json:"expires_in"`
+}
+
+// BackendStatus is the response from the backend /auth/mal/status endpoint
+type BackendStatus struct {
+	Configured bool   `json:"configured"`
+	Message    string `json:"message"`
+}
+
+// CheckBackendStatus checks if the Kujira backend is configured for MAL auth
+func CheckBackendStatus() (*BackendStatus, error) {
+	resp, err := http.Get(KujiraBackendURL + "/auth/mal/status")
+	if err != nil {
+		return nil, fmt.Errorf("failed to reach backend: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var status BackendStatus
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %v", err)
+	}
+
+	return &status, nil
+}
+
+// GetAuthURLFromBackend gets the OAuth auth URL from the Kujira backend
+func GetAuthURLFromBackend() (*AuthInitResponse, error) {
+	resp, err := http.Get(KujiraBackendURL + "/auth/mal/init?client=cli")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get auth URL from backend: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("backend returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var authResp AuthInitResponse
+	if err := json.NewDecoder(resp.Body).Decode(&authResp); err != nil {
+		return nil, fmt.Errorf("failed to decode auth response: %v", err)
+	}
+
+	return &authResp, nil
+}
+
+// RefreshTokenViaBackend refreshes the access token using the Kujira backend
+func RefreshTokenViaBackend(refreshToken string) (*TokenResponse, error) {
+	body := map[string]string{"refresh_token": refreshToken}
+	jsonBody, _ := json.Marshal(body)
+
+	resp, err := http.Post(
+		KujiraBackendURL+"/auth/mal/refresh",
+		"application/json",
+		bytes.NewBuffer(jsonBody),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to refresh token: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("token refresh failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var tokenResp TokenResponse
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return nil, fmt.Errorf("failed to decode token response: %v", err)
+	}
+
+	return &tokenResp, nil
 }
 
 func NewMALSync(config *MALConfig) (*MALSync, error) {
-	if config.ClientID == "" {
-		return nil, fmt.Errorf("MAL client ID is required")
-	}
-
+	// OAuth2 config without client credentials (backend handles them)
 	oauth2Conf := &oauth2.Config{
-		ClientID:     config.ClientID,
-		ClientSecret: config.ClientSecret,
 		Endpoint: oauth2.Endpoint{
 			AuthURL:  "https://myanimelist.net/v1/oauth2/authorize",
 			TokenURL: "https://myanimelist.net/v1/oauth2/token",
@@ -70,11 +140,19 @@ func NewMALSync(config *MALConfig) (*MALSync, error) {
 		}
 
 		malSync.token = token
-		oauth2Client := oauth2Conf.Client(malSync.oauth2Ctx, token)
-		malSync.client = mal.NewClient(oauth2Client)
 
+		// Create HTTP client that uses the access token
+		httpClient := &http.Client{
+			Transport: &bearerAuthTransport{
+				Token:     config.AccessToken,
+				Transport: http.DefaultTransport,
+			},
+		}
+		malSync.client = mal.NewClient(httpClient)
+
+		// Check if token needs refresh
 		if time.Until(token.Expiry) < 5*time.Minute {
-			log.Println("Token expiring soon, refreshing...")
+			log.Println("Token expiring soon, refreshing via backend...")
 			if err := malSync.RefreshToken(); err != nil {
 				log.Printf("Warning: Failed to refresh token: %v", err)
 			}
@@ -82,6 +160,17 @@ func NewMALSync(config *MALConfig) (*MALSync, error) {
 	}
 
 	return malSync, nil
+}
+
+// bearerAuthTransport adds Bearer token to requests
+type bearerAuthTransport struct {
+	Token     string
+	Transport http.RoundTripper
+}
+
+func (t *bearerAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req.Header.Set("Authorization", "Bearer "+t.Token)
+	return t.Transport.RoundTrip(req)
 }
 
 func (m *MALSync) UpdateAccessToken(accessToken, refreshToken string, expiry time.Time) error {
@@ -92,8 +181,14 @@ func (m *MALSync) UpdateAccessToken(accessToken, refreshToken string, expiry tim
 		TokenType:    "Bearer",
 	}
 
-	oauth2Client := m.oauth2Conf.Client(m.oauth2Ctx, m.token)
-	m.client = mal.NewClient(oauth2Client)
+	// Create HTTP client with bearer auth
+	httpClient := &http.Client{
+		Transport: &bearerAuthTransport{
+			Token:     accessToken,
+			Transport: http.DefaultTransport,
+		},
+	}
+	m.client = mal.NewClient(httpClient)
 
 	m.config.AccessToken = accessToken
 	m.config.RefreshToken = refreshToken
@@ -107,56 +202,33 @@ func (m *MALSync) RefreshToken() error {
 		return fmt.Errorf("no refresh token available")
 	}
 
-	data := url.Values{}
-	data.Set("client_id", m.config.ClientID)
-	data.Set("client_secret", m.config.ClientSecret)
-	data.Set("grant_type", "refresh_token")
-	data.Set("refresh_token", m.token.RefreshToken)
+	log.Println("Refreshing token via Kujira backend...")
 
-	req, err := http.NewRequest("POST", m.oauth2Conf.Endpoint.TokenURL, strings.NewReader(data.Encode()))
+	tokenResp, err := RefreshTokenViaBackend(m.token.RefreshToken)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %v", err)
+		return err
 	}
 
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to refresh token: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		log.Printf("PKCE: Error response from MAL: %s", string(body))
-		return fmt.Errorf("token refresh failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var tokenResp struct {
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
-		TokenType    string `json:"token_type"`
-		ExpiresIn    int    `json:"expires_in"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
-		return fmt.Errorf("failed to decode token response: %v", err)
-	}
+	expiry := time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
 
 	m.token.AccessToken = tokenResp.AccessToken
 	m.token.RefreshToken = tokenResp.RefreshToken
-	m.token.Expiry = time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
-	m.token.TokenType = tokenResp.TokenType
+	m.token.Expiry = expiry
 
-	oauth2Client := m.oauth2Conf.Client(m.oauth2Ctx, m.token)
-	m.client = mal.NewClient(oauth2Client)
+	// Create HTTP client with new token
+	httpClient := &http.Client{
+		Transport: &bearerAuthTransport{
+			Token:     tokenResp.AccessToken,
+			Transport: http.DefaultTransport,
+		},
+	}
+	m.client = mal.NewClient(httpClient)
 
 	m.config.AccessToken = tokenResp.AccessToken
 	m.config.RefreshToken = tokenResp.RefreshToken
-	m.config.TokenExpiry = m.token.Expiry
+	m.config.TokenExpiry = expiry
 
-	log.Printf("Token refreshed successfully, expires at: %v", m.token.Expiry)
+	log.Printf("Token refreshed successfully, expires at: %v", expiry)
 
 	return nil
 }
@@ -262,83 +334,35 @@ func (m *MALSync) GetUser() (*mal.User, error) {
 	return user, nil
 }
 
-func (m *MALSync) GetAuthURL(codeChallenge string) string {
-	log.Printf("PKCE: Generando URL de autenticación con code_challenge = %s", codeChallenge)
-	return fmt.Sprintf(
-		"%s?client_id=%s&response_type=code&redirect_uri=%s&code_challenge=%s&code_challenge_method=plain&state=state",
-		m.oauth2Conf.Endpoint.AuthURL,
-		m.config.ClientID,
-		m.oauth2Conf.RedirectURL,
-		codeChallenge,
-	)
-}
-
-func (m *MALSync) ExchangeCodeForToken(code, codeVerifier string) (string, string, time.Time, error) {
-	log.Printf("PKCE: Intercambiando código por token. code_verifier = %s", codeVerifier)
-	log.Printf("PKCE: Código recibido = %s", code)
-
-	data := url.Values{}
-	data.Set("client_id", m.config.ClientID)
-	data.Set("client_secret", m.config.ClientSecret)
-	data.Set("grant_type", "authorization_code")
-	data.Set("code", code)
-	data.Set("code_verifier", codeVerifier)
-	data.Set("redirect_uri", m.oauth2Conf.RedirectURL)
-
-	reqBody := data.Encode()
-	log.Printf("PKCE: Request body = %s", reqBody)
-
-	req, err := http.NewRequest("POST", m.oauth2Conf.Endpoint.TokenURL, strings.NewReader(reqBody))
-	if err != nil {
-		return "", "", time.Time{}, fmt.Errorf("failed to create request: %v", err)
-	}
-
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	log.Printf("PKCE: Sending request to %s", m.oauth2Conf.Endpoint.TokenURL)
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", "", time.Time{}, fmt.Errorf("failed to exchange code for token: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		log.Printf("PKCE: Error response from MAL: %s", string(body))
-		return "", "", time.Time{}, fmt.Errorf("token exchange failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var tokenResp struct {
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
-		TokenType    string `json:"token_type"`
-		ExpiresIn    int    `json:"expires_in"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
-		return "", "", time.Time{}, fmt.Errorf("failed to decode token response: %v", err)
-	}
-
-	expiry := time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
-
-	return tokenResp.AccessToken, tokenResp.RefreshToken, expiry, nil
-}
-
+// AuthCallbackHandler handles the OAuth callback from the Kujira backend
 type AuthCallbackHandler struct {
-	CodeChan chan string
+	TokenChan chan *TokenResponse
 }
 
 func (h *AuthCallbackHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	code := r.URL.Query().Get("code")
-	log.Printf("PKCE: Código recibido en callback = %s", code)
-	if code == "" {
-		http.Error(w, "No code parameter", http.StatusBadRequest)
+	// The backend sends tokens as query params
+	accessToken := r.URL.Query().Get("access_token")
+	refreshToken := r.URL.Query().Get("refresh_token")
+	expiresIn := r.URL.Query().Get("expires_in")
+
+	if accessToken == "" || refreshToken == "" {
+		// Check for error
+		errMsg := r.URL.Query().Get("error")
+		if errMsg != "" {
+			log.Printf("Auth error: %s", errMsg)
+		}
+		http.Error(w, "Authentication failed", http.StatusBadRequest)
 		return
 	}
 
-	h.CodeChan <- code
+	var expiresInInt int
+	fmt.Sscanf(expiresIn, "%d", &expiresInInt)
+
+	h.TokenChan <- &TokenResponse{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		ExpiresIn:    expiresInInt,
+	}
 
 	w.Header().Set("Content-Type", "text/html")
 	w.Write([]byte(`
@@ -346,15 +370,16 @@ func (h *AuthCallbackHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 			<head><title>Authentication Successful</title></head>
 			<body>
 				<h1>Authentication Successful!</h1>
+				<p>You have been connected to MyAnimeList.</p>
 				<p>You can close this window and return to the terminal.</p>
 			</body>
 		</html>
 	`))
 }
 
-func StartMALAuthServer() (chan string, error) {
-	codeChan := make(chan string, 1)
-	handler := &AuthCallbackHandler{CodeChan: codeChan}
+func StartMALAuthServer() (chan *TokenResponse, *http.Server, error) {
+	tokenChan := make(chan *TokenResponse, 1)
+	handler := &AuthCallbackHandler{TokenChan: tokenChan}
 
 	server := &http.Server{
 		Addr:    ":8080",
@@ -362,11 +387,11 @@ func StartMALAuthServer() (chan string, error) {
 	}
 
 	go func() {
-		log.Printf("Starting auth server on %s", MALRedirectURL)
+		log.Printf("Starting auth callback server on %s", MALRedirectURL)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Printf("Auth server error: %v", err)
 		}
 	}()
 
-	return codeChan, nil
+	return tokenChan, server, nil
 }
