@@ -542,6 +542,13 @@ func (c *CLI) playVideo(server Server, details *EpisodeDetails, animeURL string)
 		if historyErr := c.addToHistory(historyItem); historyErr != nil {
 			fmt.Println(errorStyle.Render("Advertencia: No se pudo guardar en el historial:"), historyErr)
 		}
+
+		// Auto-sync episode
+		go func() {
+			if err := c.autoSyncEpisode(details.Title, details.NumberEpisode); err != nil {
+				// Errors are logged in the function
+			}
+		}()
 	}
 	return err
 }
@@ -1129,6 +1136,12 @@ func (c *CLI) manageLibraryStatus(animeInfo *AnimeInfo, animeURL string) error {
 			time.Sleep(time.Second * 2)
 		} else {
 			fmt.Println(infoStyle.Render(fmt.Sprintf("✅ Guardado como: %s", newStatus)))
+
+			// Auto-sync library status
+			go func() {
+				c.autoSync(animeInfo.Title, string(newStatus))
+			}()
+
 			time.Sleep(time.Second * 1)
 		}
 	}
@@ -1460,6 +1473,41 @@ func (c *CLI) autoSync(title string, libraryStatus string) error {
 	}
 
 	log.Printf("Auto-synced '%s' to MAL with status: %s", title, malStatus)
+	return nil
+}
+
+func (c *CLI) autoSyncEpisode(title string, episodeStr string) error {
+	config, err := sync.ReadSyncConfig()
+	if err != nil || !config.AutoSync || config.Provider != sync.ProviderMyAnimeList {
+		return nil
+	}
+
+	syncService, err := sync.NewSyncService(config, c.ReadLibrary, c.ReadHistory)
+	if err != nil {
+		log.Printf("Warning: Could not create sync service for auto-sync: %v", err)
+		return nil
+	}
+
+	var episodeNum int
+	n, _ := fmt.Sscanf(episodeStr, "Episodio %d", &episodeNum)
+	if n != 1 {
+		n, _ = fmt.Sscanf(episodeStr, "%d", &episodeNum)
+	}
+
+	if n != 1 {
+		log.Printf("Warning: Could not parse episode number from '%s'", episodeStr)
+		return nil
+	}
+
+	// Always set status to 'watching' when updating progress, unless it was completed, but usually watching is safe for episode updates
+	// Actually SyncService.AddToMAL takes status. If we just want to update episode, we might need to be careful not to overwrite status if we don't know it.
+	// However, usually if you watch an episode, you are "Watching" it.
+	if err := syncService.AddToMAL(title, string(sync.SyncStatusWatching), 0, episodeNum); err != nil {
+		log.Printf("Warning: Auto-sync episode failed for '%s': %v", title, err)
+	} else {
+		log.Printf("Auto-synced '%s' Episode %d to MAL", title, episodeNum)
+	}
+
 	return nil
 }
 
