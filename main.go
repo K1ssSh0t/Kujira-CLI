@@ -508,7 +508,10 @@ func (c *CLI) getAnimeInfo(animeURL string) (*AnimeInfo, error) {
 
 func (c *CLI) playVideo(server Server, details *EpisodeDetails, animeURL string) error {
 	videoURL := server.Source
-	if strings.Contains(strings.ToLower(server.Name), "voe") {
+	referer := server.URL
+	name := strings.ToLower(server.Name)
+	switch {
+	case strings.Contains(name, "voe"):
 		extractor := extractors.Voe
 		err := extractor.GetURL(server.URL, extractor.MainURL(), func(sub extractors.SubtitleFile) {}, func(link *extractors.ExtractorLink) {
 			if (videoURL == "" || videoURL == "unknown") && strings.Contains(link.Name, "MP4") {
@@ -521,15 +524,30 @@ func (c *CLI) playVideo(server Server, details *EpisodeDetails, animeURL string)
 		if videoURL == "" {
 			return fmt.Errorf("could not extract Voe link")
 		}
-	} else if server.Name == "Stape" || server.Name == "StreamTape" {
+	case strings.Contains(name, "stape"), strings.Contains(name, "streamtape"):
 		var err error
 		videoURL, err = extractors.ExtractStreamTapeUrl(server.URL)
 		if err != nil {
 			return fmt.Errorf("error extracting StreamTape URL: %v", err)
 		}
+	case strings.Contains(name, "mp4upload"):
+		var err error
+		videoURL, referer, err = extractors.ExtractMp4UploadUrl(server.URL, server.URL)
+		if err != nil {
+			return fmt.Errorf("error extracting Mp4Upload URL: %v", err)
+		}
+	case strings.Contains(name, "uqload"):
+		var err error
+		videoURL, referer, err = extractors.ExtractUqloadUrl(server.URL, server.URL)
+		if err != nil {
+			return fmt.Errorf("error extracting Uqload URL: %v", err)
+		}
 	}
 
-	cmd := exec.Command("mpv", "--force-window=immediate", fmt.Sprintf("--http-header-fields=Referer: %s", server.URL), videoURL)
+	cmd := exec.Command("mpv", "--force-window=immediate",
+		fmt.Sprintf("--http-header-fields=Referer: %s", referer),
+		fmt.Sprintf("--user-agent=%s", extractors.UserAgent),
+		videoURL)
 	err := cmd.Start()
 	if err == nil {
 		historyItem := sync.HistoryItem{
@@ -706,7 +724,7 @@ func (c *CLI) showEpisodeDetails(anime AnimeItem) error {
 		var serverOptions []string
 		var validServers []Server
 
-		allowedServers := []string{"stape", "streamtape", "voe", "yourupload"}
+		allowedServers := []string{"stape", "streamtape", "voe", "yourupload", "mp4upload", "uqload"}
 		for _, server := range details.Servers {
 			isAllowed := false
 			for _, allowed := range allowedServers {
