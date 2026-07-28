@@ -447,7 +447,7 @@ func (c *CLI) makeRequest(endpoint string) ([]byte, error) {
 
 func (c *CLI) selectProvider() error {
 	clearScreen()
-	providers := []string{"animeflv", "tioanime", "animev1", "monoschinos"}
+	providers := []string{"animeflv", "tioanime", "animeav1", "monoschinos"}
 	prompt := &survey.Select{
 		Message: titleStyle.Render("Selecciona el proveedor de anime:"),
 		Options: providers,
