@@ -73,6 +73,11 @@ var (
 	serverAvailableStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#32CD32"))
 	serverUnavailableStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 
+	subHeaderStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
+	dubHeaderStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true)
+	latHeaderStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
+	unknownHeaderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Bold(true)
+
 	errorStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#FF0000")).
 			Bold(true)
@@ -97,9 +102,10 @@ type AnimeItem struct {
 }
 
 type Server struct {
-	Name   string `json:"name"`
-	URL    string `json:"url"`
-	Source string `json:"source"`
+	Name     string `json:"name"`
+	URL      string `json:"url"`
+	Source   string `json:"source"`
+	Language string `json:"language"`
 }
 
 type EpisodeDetails struct {
@@ -721,23 +727,97 @@ func (c *CLI) showEpisodeDetails(anime AnimeItem) error {
 
 	for {
 		clearScreen()
-		var serverOptions []string
-		var validServers []Server
-
-		allowedServers := []string{"stape", "streamtape", "voe", "yourupload", "mp4upload", "uqload"}
-		for _, server := range details.Servers {
-			isAllowed := false
-			for _, allowed := range allowedServers {
-				if strings.Contains(strings.ToLower(server.Name), allowed) {
-					isAllowed = true
-					break
+		// Agrupar por Language: "" => SUB (compat), display con fallback Desconocido si viene explícito
+		normalizeLang := func(s string) string {
+			t := strings.TrimSpace(s)
+			if t == "" {
+				return "SUB"
+			}
+			return strings.ToUpper(t)
+		}
+		styleForLang := func(lang string) lipgloss.Style {
+			switch lang {
+			case "SUB":
+				return subHeaderStyle
+			case "DUB":
+				return dubHeaderStyle
+			case "LAT":
+				return latHeaderStyle
+			default:
+				if lang == "Desconocido" {
+					return unknownHeaderStyle
+				}
+				return infoStyle
+			}
+		}
+		isAllowedServer := func(name string) bool {
+			n := strings.ToLower(name)
+			for _, a := range []string{"stape", "streamtape", "voe", "yourupload", "mp4upload", "uqload"} {
+				if strings.Contains(n, a) {
+					return true
 				}
 			}
-			if isAllowed {
-				serverOptions = append(serverOptions, serverAvailableStyle.Render(fmt.Sprintf("▶️  %s", server.Name)))
-				validServers = append(validServers, server)
-			} else {
-				serverOptions = append(serverOptions, serverUnavailableStyle.Render(fmt.Sprintf("❌ %s (No disponible)", server.Name)))
+			return false
+		}
+
+		grouped := map[string][]Server{}
+		order := []string{}
+		seenLang := map[string]bool{}
+		for _, s := range details.Servers {
+			lang := normalizeLang(s.Language)
+			// Si API trae explícitamente "Desconocido" ya viene normalizado distinto; respetar
+			if strings.TrimSpace(s.Language) == "" {
+				lang = "SUB"
+			}
+			if s.Language != "" && strings.ToUpper(strings.TrimSpace(s.Language)) == "DESCONOCIDO" {
+				lang = "Desconocido"
+			}
+			grouped[lang] = append(grouped[lang], s)
+			if !seenLang[lang] {
+				seenLang[lang] = true
+				order = append(order, lang)
+			}
+		}
+		// Orden estable: SUB, DUB, LAT primero
+		priority := map[string]int{"SUB": 0, "DUB": 1, "LAT": 2, "Desconocido": 99}
+		sort.Slice(order, func(i, j int) bool {
+			pi, oi := priority[order[i]]
+			pj, oj := priority[order[j]]
+			if oi && oj {
+				if pi != pj {
+					return pi < pj
+				}
+				return order[i] < order[j]
+			}
+			if oi != oj {
+				return oi
+			}
+			return order[i] < order[j]
+		})
+
+		var serverOptions []string
+		validServersMap := map[string]Server{}
+		var validServers []Server
+		for _, lang := range order {
+			servers := grouped[lang]
+			validCount := 0
+			for _, s := range servers {
+				if isAllowedServer(s.Name) {
+					validCount++
+				}
+			}
+			header := styleForLang(lang).Render(fmt.Sprintf("%s — %d", lang, validCount))
+			serverOptions = append(serverOptions, header)
+			for _, s := range servers {
+				label := fmt.Sprintf("▶️  %s [%s]", s.Name, lang)
+				if isAllowedServer(s.Name) {
+					opt := serverAvailableStyle.Render(label)
+					serverOptions = append(serverOptions, opt)
+					validServersMap[opt] = s
+					validServers = append(validServers, s)
+				} else {
+					serverOptions = append(serverOptions, serverUnavailableStyle.Render(fmt.Sprintf("❌ %s [%s] (No disponible)", s.Name, lang)))
+				}
 			}
 		}
 
@@ -748,10 +828,13 @@ func (c *CLI) showEpisodeDetails(anime AnimeItem) error {
 			Message:  titleStyle.Render(fmt.Sprintf("%s - %s", details.Title, details.NumberEpisode)),
 			Help:     "Selecciona un servidor para reproducir",
 			Options:  serverOptions,
-			PageSize: 10,
+			PageSize: 15,
 		}
 		survey.AskOne(prompt, &choice)
 
+		if strings.Contains(choice, "—") {
+			continue
+		}
 		switch choice {
 		case listNavStyle.Render("← Volver"):
 			return nil
@@ -768,20 +851,17 @@ func (c *CLI) showEpisodeDetails(anime AnimeItem) error {
 			continue
 		}
 
-		for _, server := range validServers {
-			expected := serverAvailableStyle.Render(fmt.Sprintf("▶️  %s", server.Name))
-			if choice == expected {
-				clearScreen()
-				fmt.Println(infoStyle.Render(fmt.Sprintf("🚀 Reproduciendo en %s...", server.Name)))
-				if err := c.playVideo(server, details, anime.URL); err != nil {
-					fmt.Println(errorStyle.Render("Error al reproducir:"), err)
-				} else {
-					fmt.Println(infoStyle.Render("✅ Video iniciado correctamente."))
-				}
-				fmt.Println(infoStyle.Render("Presiona Enter para continuar..."))
-				fmt.Scanln()
-				break
+		if server, ok := validServersMap[choice]; ok {
+			_ = validServers
+			clearScreen()
+			fmt.Println(infoStyle.Render(fmt.Sprintf("🚀 Reproduciendo en %s...", server.Name)))
+			if err := c.playVideo(server, details, anime.URL); err != nil {
+				fmt.Println(errorStyle.Render("Error al reproducir:"), err)
+			} else {
+				fmt.Println(infoStyle.Render("✅ Video iniciado correctamente."))
 			}
+			fmt.Println(infoStyle.Render("Presiona Enter para continuar..."))
+			fmt.Scanln()
 		}
 	}
 }

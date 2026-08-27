@@ -28,9 +28,10 @@ type Episode struct {
 
 // Estructura para los servidores de un episodio
 type Servers struct {
-	Name   string `json:"name"`
-	Url    string `json:"url"`	
-	Source string `json:"source"`
+	Name     string `json:"name"`
+	Url      string `json:"url"`
+	Source   string `json:"source"`
+	Language string `json:"language"`
 }
 
 // Estructura para los datos de un anime de animeflv
