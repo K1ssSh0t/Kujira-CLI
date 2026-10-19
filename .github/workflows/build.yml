@@ -1,17 +1,78 @@
 name: Build and Release
 
+# Publica un release automáticamente con cada push a main. La versión se
+# calcula a partir del último tag vX.Y.Z y se incrementa el patch. Los tags
+# deben ser semver porque el auto-update usa go-selfupdate.
 on:
   push:
-    tags:
-      - "v*" # Se activa con tags que empiecen con 'v' (ej: v1.0.0)
-  workflow_dispatch: # Permite ejecutarlo manualmente
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+env:
+  BASE_VERSION: "1.5.0"
+
 jobs:
+  prepare:
+    name: Prepare version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute next version
+        id: version
+        run: |
+          set -euo pipefail
+
+          LATEST_TAG="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1 || true)"
+          BASE="${BASE_VERSION}"
+
+          if [ -z "$LATEST_TAG" ]; then
+            NEXT="$BASE"
+          else
+            LATEST="${LATEST_TAG#v}"
+            HIGHEST="$(printf '%s\n%s\n' "$BASE" "$LATEST" | sort -V | tail -n1)"
+
+            if [ "$HIGHEST" = "$BASE" ] && [ "$LATEST" != "$BASE" ]; then
+              # El último tag es anterior a la base; empezamos en la base.
+              NEXT="$BASE"
+            else
+              MAJOR="${LATEST%%.*}"
+              REST="${LATEST#*.}"
+              MINOR="${REST%%.*}"
+              PATCH="${REST#*.}"
+
+              case "${MAJOR}${MINOR}${PATCH}" in
+                *[!0-9]*)
+                  echo "ERROR: el tag $LATEST_TAG no es semver (vX.Y.Z)" >&2
+                  exit 1
+                  ;;
+              esac
+
+              PATCH=$((10#$PATCH + 1))
+              NEXT="${MAJOR}.${MINOR}.${PATCH}"
+            fi
+          fi
+
+          echo "version=v${NEXT}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${NEXT}" >> "$GITHUB_OUTPUT"
+          echo "Publicando v${NEXT} (último tag: ${LATEST_TAG:-ninguno})"
+
   build-linux:
     name: Build Linux
+    needs: prepare
     runs-on: ubuntu-latest
 
     steps:
@@ -21,15 +82,20 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: "1.24.x"
           cache: true
 
+      - name: Run tests
+        run: |
+          go test ./...
+          go vet ./...
+
       - name: Build Linux binaries
         run: |
           make prepare-dist
-          make build-linux
+          make build-linux VERSION="${{ needs.prepare.outputs.version }}"
 
       - name: Upload Linux AMD64 Artifact
         uses: actions/upload-artifact@v4
@@ -47,6 +113,7 @@ jobs:
 
   build-windows:
     name: Build Windows
+    needs: prepare
     runs-on: ubuntu-latest
 
     steps:
@@ -56,7 +123,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: "1.24.x"
           cache: true
@@ -65,10 +132,48 @@ jobs:
         run: |
           go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
 
+      - name: Sync Windows version metadata
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+
+          raw = os.environ["RELEASE_VERSION"].lstrip("v")
+          match = re.match(r"^(\d+)\.(\d+)\.(\d+)", raw)
+          if not match:
+              raise SystemExit(f"versión inválida: {raw}")
+
+          major, minor, patch = map(int, match.groups())
+          version = f"{major}.{minor}.{patch}.0"
+
+          with open("versioninfo.json", encoding="utf-8") as fh:
+              data = json.load(fh)
+
+          for key in ("FileVersion", "ProductVersion"):
+              data["FixedFileInfo"][key].update({
+                  "Major": major,
+                  "Minor": minor,
+                  "Patch": patch,
+                  "Build": 0,
+              })
+
+          data["StringFileInfo"]["FileVersion"] = version
+          data["StringFileInfo"]["ProductVersion"] = version
+
+          with open("versioninfo.json", "w", encoding="utf-8") as fh:
+              json.dump(data, fh, indent=4)
+              fh.write("\n")
+
+          print(f"versioninfo.json -> {version}")
+          PY
+
       - name: Build Windows binary
         run: |
           make prepare-dist
-          make build-windows
+          make build-windows VERSION="${{ needs.prepare.outputs.version }}"
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
@@ -79,9 +184,10 @@ jobs:
 
   create-release:
     name: Create Release
-    needs: [build-linux, build-windows]
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: [prepare, build-linux, build-windows]
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -120,11 +226,14 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: Kujira CLI ${{ needs.prepare.outputs.version }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
           files: |
             dist/release/kujira-cli_linux_amd64
             dist/release/kujira-cli_linux_arm64
             dist/release/kujira-cli_windows_amd64.exe
             dist/release/checksums.txt
-          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
