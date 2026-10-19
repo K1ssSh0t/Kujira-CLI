@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#9A5CFF"/>
+      <stop offset="0.55" stop-color="#7C3AED"/>
+      <stop offset="1" stop-color="#44157F"/>
+    </linearGradient>
+    <linearGradient id="whale" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#EDE6FF"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="24" y="24" width="976" height="976" rx="224" fill="url(#bg)"/>
+  <circle cx="300" cy="240" r="210" fill="#FFFFFF" opacity="0.07"/>
+
+  <!-- ola -->
+  <path d="M 250 806 C 330 768 410 768 490 806 C 570 844 650 844 730 806 C 770 787 800 782 826 786"
+        fill="none" stroke="#67E8F9" stroke-width="20" stroke-linecap="round" opacity="0.55"/>
+
+  <g transform="translate(545 580) scale(1.08) translate(-545 -580)">
+    <!-- cuerpo y cola -->
+    <path d="M 190 620
+             C 190 505 300 440 445 440
+             C 585 440 690 500 742 582
+             C 790 505 818 430 820 365
+             C 852 402 868 458 860 512
+             C 838 494 812 486 790 492
+             C 820 535 838 585 842 638
+             C 812 618 784 592 764 562
+             C 720 622 645 660 552 678
+             C 450 698 335 692 260 662
+             C 215 644 190 638 190 620 Z"
+          fill="url(#whale)"/>
+
+    <!-- vientre -->
+    <path d="M 245 640 C 340 700 510 715 655 650 C 680 668 690 694 678 714
+             C 600 756 395 760 292 718 C 265 706 250 678 245 640 Z"
+          fill="#C4B5FD" opacity="0.5"/>
+
+    <!-- aleta -->
+    <path d="M 430 664 C 474 692 512 740 514 792 C 486 766 438 734 394 714 Z"
+          fill="#DDD6FE"/>
+
+    <!-- ojo -->
+    <circle cx="348" cy="560" r="17" fill="#2E1065"/>
+    <circle cx="353" cy="554" r="5" fill="#FFFFFF"/>
+  </g>
+</svg>

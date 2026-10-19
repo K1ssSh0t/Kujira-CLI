@@ -146,9 +146,10 @@ type SearchResult struct {
 }
 
 type CLI struct {
-	baseURL  string
-	client   *http.Client
-	provider string
+	baseURL      string
+	client       *http.Client
+	provider     string
+	updateNotice string
 }
 
 func NewCLI() *CLI {
@@ -584,12 +585,16 @@ func (c *CLI) mainMenu() error {
 		clearScreen()
 		mainTitle := titleStyle.Render("🎌 Kujira CLI")
 		providerText := infoStyle.Render(fmt.Sprintf("Proveedor actual: %s", c.provider))
-		fmt.Println(appStyle.Render(lipgloss.JoinVertical(lipgloss.Center, mainTitle, providerText)))
+		header := []string{mainTitle, providerText}
+		if c.updateNotice != "" {
+			header = append(header, infoStyle.Render("⬆️  "+c.updateNotice))
+		}
+		fmt.Println(appStyle.Render(lipgloss.JoinVertical(lipgloss.Center, header...)))
 
 		var choice string
 		prompt := &survey.Select{
 			Message: "¿Qué deseas hacer?",
-			Options: []string{"Ver últimos animes", "Buscar anime", "Mi Biblioteca", "Historial", "Sincronizar con MAL", "Cambiar proveedor", "Salir"},
+			Options: []string{"Ver últimos animes", "Buscar anime", "Mi Biblioteca", "Historial", "Sincronizar con MAL", "Cambiar proveedor", "Buscar actualizaciones", "Salir"},
 		}
 		survey.AskOne(prompt, &choice)
 
@@ -608,6 +613,8 @@ func (c *CLI) mainMenu() error {
 			if err := c.selectProvider(); err != nil {
 				return err
 			}
+		case "Buscar actualizaciones":
+			c.showUpdateMenu()
 		case "Salir":
 			clearScreen()
 			fmt.Println(infoStyle.Render("👋 ¡Hasta luego!"))
@@ -1623,6 +1630,7 @@ func main() {
 			if err := cli.selectProvider(); err != nil {
 				log.Fatal(err)
 			}
+			cli.checkUpdatesOnStartup()
 			if err := cli.mainMenu(); err != nil {
 				log.Fatal(err)
 			}
@@ -1630,13 +1638,11 @@ func main() {
 	}
 
 	// Configurar la plantilla de versión
-	rootCmd.SetVersionTemplate(`{{printf "%s: %s - versión %s\n" .Name .Short .Version}}
-Compilado el: {{.Version}}
-Compilación: {{.Name}}-{{.Version}}
-`)
+	rootCmd.SetVersionTemplate(fmt.Sprintf("{{.Name}} - versión {{.Version}}\nCompilado el: %s (commit: %s)\n", buildDate, gitCommit))
 
 	// Agregar flags globales
 	rootCmd.PersistentFlags().StringP("provider", "p", "", "Proveedor de anime a usar")
+	rootCmd.PersistentFlags().BoolVar(&noUpdateCheck, "no-update-check", false, "No comprobar actualizaciones al iniciar")
 	rootCmd.Flags().BoolP("version", "v", false, "Mostrar información de versión")
 
 	var searchCmd = &cobra.Command{
@@ -1661,8 +1667,10 @@ Compilación: {{.Name}}-{{.Version}}
 
 	searchCmd.Flags().StringP("provider", "p", "", "Proveedor de anime (animeflv, tioanime, animeav1, monoschinos)")
 	rootCmd.AddCommand(searchCmd)
+	rootCmd.AddCommand(newUpdateCommand())
 
 	if err := rootCmd.Execute(); err != nil {
-		log.Fatal(err)
+		// Cobra ya imprimió el error; evitamos duplicarlo con log.Fatal.
+		os.Exit(1)
 	}
 }

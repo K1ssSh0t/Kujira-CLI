@@ -8,6 +8,10 @@
 *.so
 *.dylib
 
+# Binarios locales de Kujira CLI
+/kujira-cli
+/versioninfo.syso
+
 # Test binary, built with `go test -c`
 *.test
 

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Kujira CLI
+GenericName=Cliente de anime
+Comment=Explora y reproduce anime desde la terminal
+Exec=kujira-cli
+Icon=kujira-cli
+Terminal=true
+Categories=AudioVideo;Video;
+Keywords=anime;cli;kujira;terminal;
+StartupNotify=false
