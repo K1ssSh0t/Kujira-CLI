@@ -3,6 +3,7 @@ name: Build and Release
 # Publica un release automáticamente con cada push a main. La versión se
 # calcula a partir del último tag vX.Y.Z y se incrementa el patch. Los tags
 # deben ser semver porque el auto-update usa go-selfupdate.
+# Proceso completo y checklist: docs/RELEASING.md
 on:
   push:
     branches: [main]
